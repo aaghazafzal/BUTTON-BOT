@@ -4,14 +4,20 @@
 ╚══════════════════════════════════════════╝
 """
 
+import os
+
 # ─── Bot Token ───────────────────────────────────────
 BOT_TOKEN = "8813750611:AAET-pru66SIHH9oYzRGPMTHvhdfCbUCei0"
 
 # ─── Univora Platform Branding ───────────────────────────
-FORCE_JOIN_CHANNEL   = "@Univora88"          # Force join channel username
-FORCE_JOIN_CHANNEL_URL = "https://t.me/Univora88"  # Channel invite URL
-WEBSITE_URL          = "https://univora.site"  # Univora website
-START_LOGO_PATH      = r"C:\ALL FINAL PROJECTS\BOTS\BUTTON BOT\startmssglogo.jpg"
+FORCE_JOIN_CHANNEL     = "@Univora88"
+FORCE_JOIN_CHANNEL_URL = "https://t.me/Univora88"
+WEBSITE_URL            = "https://univora.site"
+
+# Paths relative to THIS file (works locally + on Render / any OS)
+_BASE = os.path.dirname(os.path.abspath(__file__))
+START_LOGO_PATH = os.path.join(_BASE, "startmssglogo.jpg")
+HELP_LOGO_PATH  = os.path.join(_BASE, "helplogo.png")
 
 # ─── Database ────────────────────────────────────────
 DB_PATH = "button_bot.db"

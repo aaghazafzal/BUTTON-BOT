@@ -28,7 +28,7 @@ from config import (
     BOT_TOKEN, WELCOME_TEXT, HELP_DICT, BOT_NAME,
     MAX_POSTS_PER_USER, MAX_BUTTONS_PER_POST,
     FORCE_JOIN_CHANNEL, FORCE_JOIN_CHANNEL_URL, WEBSITE_URL,
-    START_LOGO_PATH, FORCE_JOIN_TEXT,
+    START_LOGO_PATH, FORCE_JOIN_TEXT, HELP_LOGO_PATH,
 )
 from utils.keyboards import (
     # Reply keyboards
@@ -125,7 +125,7 @@ async def _send_welcome(update_or_message, ctx, is_message=True):
     uname = await _get_username(ctx.bot)
     kb = welcome_inline_kb(FORCE_JOIN_CHANNEL_URL, WEBSITE_URL, uname)
     try:
-        with open(START_LOGO_PATH, "startmssglogo.jpg") as f:
+        with open(START_LOGO_PATH, "rb") as f:
             if is_message:
                 await update_or_message.reply_photo(
                     photo=f,
@@ -225,9 +225,8 @@ async def welcome_help_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     username = await _get_username(ctx.bot)
     text = HELP_DICT["main"].format(username=username)
-    HELP_LOGO = r"helplogo.jpg"
     try:
-        with open(HELP_LOGO, "rb") as f:
+        with open(HELP_LOGO_PATH, "rb") as f:
             await ctx.bot.send_photo(
                 chat_id=update.effective_user.id,
                 photo=f,
@@ -245,12 +244,10 @@ async def welcome_help_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    username   = await _get_username(ctx.bot)
-    photo_path = r"helplogo.png"
+    username = await _get_username(ctx.bot)
     text = HELP_DICT["main"].format(username=username)
-    
     try:
-        with open(photo_path, "rb") as f:
+        with open(HELP_LOGO_PATH, "rb") as f:
             await update.message.reply_photo(
                 photo=f,
                 caption=text,
@@ -391,11 +388,9 @@ async def on_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def on_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await delete_preview(update, ctx)
     username   = await _get_username(ctx.bot)
-    photo_path = r"C:\Users\aagha\.gemini\antigravity\brain\d9b9b5dd-eb35-430f-9d3f-52c24c19876f\help_center_banner_1780375706105.png"
     text = HELP_DICT["main"].format(username=username)
-    
     try:
-        with open(photo_path, "rb") as f:
+        with open(HELP_LOGO_PATH, "rb") as f:
             await update.message.reply_photo(
                 photo=f,
                 caption=text,
