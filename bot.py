@@ -11,6 +11,8 @@
 import logging
 import asyncio
 import os
+import json
+import re
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
     InlineQueryResultArticle, InputTextMessageContent,
@@ -35,16 +37,20 @@ from utils.keyboards import (
     main_menu_reply_kb, button_panel_reply_kb, color_reply_kb,
     row_reply_kb, templates_reply_kb, cancel_only_reply_kb,
     done_cancel_reply_kb, remove_kb,
+    auto_adder_reply_kb, project_panel_reply_kb,
     # Inline keyboards
     post_keyboard, post_list_inline_kb, post_actions_inline_kb,
     confirm_delete_inline_kb, post_saved_inline_kb, channel_list_inline_kb,
     help_main_inline_kb, help_topic_inline_kb,
     welcome_inline_kb, force_join_inline_kb,
+    project_post_keyboard, my_projects_inline_kb,
     # Button text constants
     BTN_CREATE, BTN_MYPOSTS, BTN_CHANNEL, BTN_STATS, BTN_HELP, BTN_SETTINGS,
+    BTN_AUTO_ADDER,
     BTN_ADD_URL, BTN_ADD_LD, BTN_ADD_VIEWS, BTN_ADD_SHARE,
     BTN_TEMPLATES, BTN_CLEAR, BTN_PREVIEW, BTN_DONE, BTN_CANCEL,
     TMPL_LD, TMPL_LDV, TMPL_LDS, TMPL_VS, TMPL_S, TMPL_BACK,
+    BTN_PROJ_NEW, BTN_PROJ_ADD_POST, BTN_MY_PROJECTS, BTN_BACK_MAIN,
     COLOR_LABELS,
 )
 from utils.helpers import (
@@ -76,6 +82,13 @@ logger = logging.getLogger(__name__)
     WAITING_CHANNEL_POST_ID,  # waiting for post_id to send to channel
 ) = range(11)
 
+# ─── Auto Button Adder states ────────────────────────────────────────────────
+AUTO_ADDER_HOME  = 11   # auto adder hub menu
+PROJ_WAIT_FWD    = 12   # waiting for forwarded post / @channelname
+PROJ_MANAGE_BTNS = 13   # project button panel
+POST_WAIT_LINK   = 14   # waiting for t.me/c/... link
+POST_MANAGE_BTNS = 15   # add-to-post button panel
+
 
 # ─── Filter helpers ──────────────────────────────────────────────────────────
 
@@ -90,9 +103,11 @@ def txt_any(*args):
 # IMPORTANT: Do NOT add digit strings here — they would block post IDs and channel IDs!
 ALL_NAV_BUTTONS = [
     BTN_CREATE, BTN_MYPOSTS, BTN_CHANNEL, BTN_STATS, BTN_HELP, BTN_SETTINGS,
+    BTN_AUTO_ADDER,
     BTN_ADD_URL, BTN_ADD_LD, BTN_ADD_VIEWS, BTN_ADD_SHARE,
     BTN_TEMPLATES, BTN_CLEAR, BTN_PREVIEW, BTN_DONE, BTN_CANCEL,
     TMPL_LD, TMPL_LDV, TMPL_LDS, TMPL_VS, TMPL_S, TMPL_BACK,
+    BTN_PROJ_NEW, BTN_PROJ_ADD_POST, BTN_MY_PROJECTS, BTN_BACK_MAIN,
 ] + list(COLOR_LABELS.keys())
 
 
@@ -317,11 +332,32 @@ async def on_my_posts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return MAIN_MENU
 
 
+async def _resolve_channel_titles(bot, channels: list) -> list:
+    """
+    For any channel row missing a title, try to fetch it from Telegram
+    and update the DB in the background. Returns updated list.
+    """
+    updated = []
+    for ch in channels:
+        if not ch.get('channel_title'):
+            try:
+                chat = await bot.get_chat(ch['channel_username_or_id'])
+                title = chat.title or chat.username or ch['channel_username_or_id']
+                await db.update_channel_title(ch['id'], title)
+                ch = dict(ch)          # make a mutable copy
+                ch['channel_title'] = title
+            except Exception:
+                pass  # can't resolve — show ID as fallback
+        updated.append(ch)
+    return updated
+
+
 async def on_send_channel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """User clicked 📡 Send to Channel"""
     await delete_preview(update, ctx)
-    user_id = update.effective_user.id
+    user_id  = update.effective_user.id
     channels = await db.get_user_channels(user_id)
+    channels = await _resolve_channel_titles(ctx.bot, channels)   # lazy name fetch
     kb = channel_list_inline_kb(channels)
     await update.message.reply_text(
         "📡 <b>Channel Manager</b>\n\n"
@@ -655,10 +691,62 @@ async def on_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════
 
 async def on_template_pick(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    text     = update.message.text
+    btn_mode = ctx.user_data.get('btn_mode', 'post')
+
+    # ─── Project / Add-to-post template mode ─────────────
+    if btn_mode in ('project', 'add_to_post'):
+        key = 'proj_buttons' if btn_mode == 'project' else 'atp_buttons'
+        ctx.user_data[key] = []  # clear before applying template
+        btns = ctx.user_data[key]
+
+        def _tmpl_append(btype, row, order):
+            btns.append({'button_type': btype, 'row_num': row, 'order_num': order})
+
+        if text == TMPL_LD:
+            _tmpl_append('like', 0, 0); _tmpl_append('dislike', 0, 1)
+            desc = "👍 Like | 👎 Dislike"
+        elif text == TMPL_LDV:
+            _tmpl_append('like', 0, 0); _tmpl_append('dislike', 0, 1)
+            _tmpl_append('views', 1, 0)
+            desc = "👍 Like | 👎 Dislike\n👁️ Views"
+        elif text == TMPL_LDS:
+            _tmpl_append('like', 0, 0); _tmpl_append('dislike', 0, 1)
+            _tmpl_append('share', 1, 0)
+            desc = "👍 Like | 👎 Dislike\n📤 Share"
+        elif text == TMPL_VS:
+            _tmpl_append('views', 0, 0); _tmpl_append('share', 0, 1)
+            desc = "👁️ Views | 📤 Share"
+        elif text == TMPL_S:
+            _tmpl_append('share', 0, 0)
+            desc = "📤 Share"
+        elif text in (TMPL_BACK, BTN_CANCEL):
+            if btn_mode == 'project':
+                await _proj_refresh_panel(update, ctx)
+                return PROJ_MANAGE_BTNS
+            else:
+                await _atp_refresh_panel(update, ctx)
+                return POST_MANAGE_BTNS
+        else:
+            if btn_mode == 'project':
+                return PROJ_MANAGE_BTNS
+            else:
+                return POST_MANAGE_BTNS
+
+        await update.message.reply_text(
+            f"⚡ <b>Template Applied!</b>\n\n{desc}", parse_mode=ParseMode.HTML
+        )
+        if btn_mode == 'project':
+            await _proj_refresh_panel(update, ctx)
+            return PROJ_MANAGE_BTNS
+        else:
+            await _atp_refresh_panel(update, ctx)
+            return POST_MANAGE_BTNS
+
+    # ─── Regular post mode ─────────────────────────────────
     post_id = ctx.user_data.get('current_post_id')
     if not post_id:
         return await on_cancel_to_menu(update, ctx)
-    text = update.message.text
     await db.clear_post_buttons(post_id)
 
     if text == TMPL_LD:
@@ -754,35 +842,64 @@ async def receive_button_color(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
     return ADDING_URL_ROW
 
-
 async def receive_button_row(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if not text.isdigit():
         await update.message.reply_text("Please choose a row number from the keyboard 👇")
         return ADDING_URL_ROW
 
-    row_num = int(text) - 1  # 0-indexed
-    post_id = ctx.user_data['current_post_id']
-    btn = ctx.user_data.get('new_btn', {})
-    order_num = await db.get_button_count_in_row(post_id, row_num)
+    row_num   = int(text) - 1  # 0-indexed
+    btn       = ctx.user_data.get('new_btn', {})
+    btn_mode  = ctx.user_data.get('btn_mode', 'post')
 
-    await db.add_button(
-        post_id=post_id, button_type='url',
-        text=btn.get('text', 'Button'),
-        url=btn.get('url'),
-        color=btn.get('color', 'default'),
-        row_num=row_num, order_num=order_num
-    )
-    ctx.user_data['new_btn'] = {}
-    await update.message.reply_text(
+    btn_label = btn.get('text', 'Button')
+    btn_url   = btn.get('url')
+    btn_color = btn.get('color', 'default')
+
+    confirm_text = (
         f"✅ <b>Button Added!</b>\n"
-        f"Label: <code>{btn.get('text')}</code>\n"
-        f"URL: <code>{btn.get('url')}</code>\n"
-        f"Color: <b>{btn.get('color','default')}</b> | Row: <b>{row_num+1}</b>",
-        parse_mode=ParseMode.HTML
+        f"Label: <code>{btn_label}</code>\n"
+        f"URL: <code>{btn_url}</code>\n"
+        f"Color: <b>{btn_color}</b> | Row: <b>{row_num+1}</b>"
     )
-    await _refresh_panel(update, ctx, post_id)
-    return MANAGING_BUTTONS
+
+    if btn_mode == 'project':
+        btns = ctx.user_data.setdefault('proj_buttons', [])
+        btns.append({
+            'button_type': 'url', 'text': btn_label,
+            'url': btn_url, 'color': btn_color, 'row_num': row_num,
+            'order_num': sum(1 for b in btns if b.get('row_num') == row_num)
+        })
+        ctx.user_data['new_btn'] = {}
+        await update.message.reply_text(confirm_text, parse_mode=ParseMode.HTML)
+        await _proj_refresh_panel(update, ctx)
+        return PROJ_MANAGE_BTNS
+
+    elif btn_mode == 'add_to_post':
+        btns = ctx.user_data.setdefault('atp_buttons', [])
+        btns.append({
+            'button_type': 'url', 'text': btn_label,
+            'url': btn_url, 'color': btn_color, 'row_num': row_num,
+            'order_num': sum(1 for b in btns if b.get('row_num') == row_num)
+        })
+        ctx.user_data['new_btn'] = {}
+        await update.message.reply_text(confirm_text, parse_mode=ParseMode.HTML)
+        await _atp_refresh_panel(update, ctx)
+        return POST_MANAGE_BTNS
+
+    else:
+        # Regular post mode (default)
+        post_id   = ctx.user_data['current_post_id']
+        order_num = await db.get_button_count_in_row(post_id, row_num)
+        await db.add_button(
+            post_id=post_id, button_type='url',
+            text=btn_label, url=btn_url, color=btn_color,
+            row_num=row_num, order_num=order_num
+        )
+        ctx.user_data['new_btn'] = {}
+        await update.message.reply_text(confirm_text, parse_mode=ParseMode.HTML)
+        await _refresh_panel(update, ctx, post_id)
+        return MANAGING_BUTTONS
 
 
 # ═══════════════════════════════════════════════════════
@@ -824,12 +941,14 @@ async def channel_manager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
         
     elif q.data == "rmchan":
         channels = await db.get_user_channels(user_id)
+        channels = await _resolve_channel_titles(ctx.bot, channels)
         kb = channel_list_inline_kb(channels, delete_mode=True)
         await q.message.edit_reply_markup(reply_markup=kb)
         return MAIN_MENU
         
     elif q.data == "donechan":
         channels = await db.get_user_channels(user_id)
+        channels = await _resolve_channel_titles(ctx.bot, channels)
         kb = channel_list_inline_kb(channels, delete_mode=False)
         await q.message.edit_reply_markup(reply_markup=kb)
         return MAIN_MENU
@@ -837,23 +956,24 @@ async def channel_manager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
     elif q.data.startswith("pickchan|"):
         chan_id = int(q.data.split("|")[1])
         channels = await db.get_user_channels(user_id)
-        channel_str = next((c['channel_username_or_id'] for c in channels if c['id'] == chan_id), None)
-        if not channel_str:
+        chan_row = next((c for c in channels if c['id'] == chan_id), None)
+        if not chan_row:
             return MAIN_MENU
-            
+
+        channel_str  = chan_row['channel_username_or_id']
+        channel_name = chan_row.get('channel_title') or channel_str
         ctx.user_data['target_channel'] = channel_str
-        
+
         if ctx.user_data.get('direct_send_post_id'):
             post_id = ctx.user_data['direct_send_post_id']
-            # Direct send simulation
-            progress = await q.message.reply_text(f"⏳ Sending Post #{post_id} to {channel_str}...")
+            progress = await q.message.reply_text(f"⏳ Sending Post #{post_id} to {channel_name}...")
             try:
                 from utils.helpers import send_post
                 await send_post(ctx.bot, channel_str, post_id, track=True, for_channel=True)
                 await db.increment_views(post_id)
                 await progress.delete()
                 await q.message.reply_text(
-                    f"✅ <b>Post #{post_id} sent to {channel_str}!</b>\n\n"
+                    f"✅ <b>Post #{post_id} sent to {channel_name}!</b>\n\n"
                     "View your channel to see the post.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=main_menu_reply_kb()
@@ -861,7 +981,7 @@ async def channel_manager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
             except Exception as e:
                 await progress.delete()
                 await q.message.reply_text(f"❌ Failed: {e}", reply_markup=main_menu_reply_kb())
-            
+
             ctx.user_data['direct_send_post_id'] = None
             return MAIN_MENU
         else:
@@ -874,7 +994,7 @@ async def channel_manager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
                 for p in posts[:15]
             )
             await q.message.reply_text(
-                f"📡 Channel: <code>{channel_str}</code>\n\n"
+                f"📡 <b>{channel_name}</b>  <code>({channel_str})</code>\n\n"
                 f"<b>Your posts:</b>\n{post_list}\n\n"
                 "Now type the <b>Post ID</b> number and send:",
                 parse_mode=ParseMode.HTML,
@@ -894,11 +1014,25 @@ async def receive_new_channel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return WAITING_NEW_CHANNEL
 
     user_id = update.effective_user.id
-    success = await db.add_user_channel(user_id, channel)
+
+    # Try to fetch the channel's display name from Telegram
+    channel_title = None
+    try:
+        chat = await ctx.bot.get_chat(channel)
+        channel_title = chat.title or chat.username or channel
+    except Exception:
+        channel_title = None  # Couldn't fetch — store without title
+
+    success = await db.add_user_channel(user_id, channel, title=channel_title)
+    display = f"<b>{channel_title}</b> (<code>{channel}</code>)" if channel_title else f"<code>{channel}</code>"
+
     if not success:
         await update.message.reply_text("⚠️ This channel is already saved or limit reached.")
     else:
-        await update.message.reply_text(f"✅ Channel {channel} saved successfully!")
+        await update.message.reply_text(
+            f"✅ Channel {display} saved successfully!",
+            parse_mode=ParseMode.HTML
+        )
 
     channels = await db.get_user_channels(user_id)
     kb = channel_list_inline_kb(channels)
@@ -1389,6 +1523,650 @@ async def chosen_inline_result(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 
+
+# ═══════════════════════════════════════════════════════
+#   AUTO BUTTON ADDER  — Home
+# ═══════════════════════════════════════════════════════
+
+async def on_auto_adder(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """User pressed ⚡ Auto Button Adder from main menu."""
+    await delete_preview(update, ctx)
+    await update.message.reply_text(
+        "⚡ <b>Auto Button Adder</b>\n\n"
+        "Automatically add custom buttons to your channel posts!\n\n"
+        "🚀 <b>Choose an option below:</b>\n\n"
+        "• <b>⚡ Auto Button Project</b> — Auto-add buttons to ALL new posts in a channel\n"
+        "• <b>🔗 Add Button to Post</b> — Add buttons to one specific existing post\n"
+        "• <b>📁 My Projects</b> — View & manage your projects",
+        parse_mode=ParseMode.HTML,
+        reply_markup=auto_adder_reply_kb()
+    )
+    return AUTO_ADDER_HOME
+
+
+async def on_back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """🔙 Back from auto adder to main menu."""
+    await delete_preview(update, ctx)
+    ctx.user_data.clear()
+    await update.message.reply_text(
+        "🏠 Back to main menu.",
+        reply_markup=main_menu_reply_kb()
+    )
+    return MAIN_MENU
+
+
+# ═══════════════════════════════════════════════════════
+#   AUTO BUTTON PROJECT — Setup
+# ═══════════════════════════════════════════════════════
+
+async def on_proj_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """User chose ⚡ Auto Button Project."""
+    await update.message.reply_text(
+        "📡 <b>Auto Button Project Setup</b>\n\n"
+        "<b>Step 1:</b> Add <b>@UNIVORA_BUTTONBOT</b> as an admin to your channel\n"
+        "       (needs <i>Edit Messages</i> permission)\n\n"
+        "<b>Step 2:</b> Forward any post from that channel here 👇\n\n"
+        "⚠️ Make sure <b>Show sender's name</b> is <b>ENABLED</b> when forwarding.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_only_reply_kb()
+    )
+    ctx.user_data['proj_buttons'] = []
+    return PROJ_WAIT_FWD
+
+
+async def receive_proj_forward(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Receive the forwarded post — detect the channel."""
+    msg = update.message
+
+    # Extract channel from forward origin
+    channel_id = None
+    channel_title = None
+
+    if msg.forward_origin:
+        origin = msg.forward_origin
+        if hasattr(origin, 'chat') and origin.chat:
+            channel_id    = str(origin.chat.id)
+            channel_title = origin.chat.title or origin.chat.username or channel_id
+        elif hasattr(origin, 'sender_chat') and origin.sender_chat:
+            channel_id    = str(origin.sender_chat.id)
+            channel_title = origin.sender_chat.title or channel_id
+
+    if not channel_id:
+        await msg.reply_text(
+            "⚠️ Couldn't detect a channel from this forward.\n\n"
+            "Please forward a post <b>directly from your channel</b>.\n"
+            "Make sure <b>Show sender's name</b> is enabled!",
+            parse_mode=ParseMode.HTML
+        )
+        return PROJ_WAIT_FWD
+
+    # Try to get a fresh title via API
+    try:
+        chat = await ctx.bot.get_chat(channel_id)
+        channel_title = chat.title or channel_title
+    except Exception:
+        pass
+
+    ctx.user_data['proj_channel_id']    = channel_id
+    ctx.user_data['proj_channel_title'] = channel_title
+    ctx.user_data['proj_buttons']       = []
+
+    existing_types = _proj_existing_types(ctx)
+    await msg.reply_text(
+        f"✅ <b>Channel detected: {channel_title}</b>\n\n"
+        "🎯 Now configure the buttons that will be added to <b>every new post</b>:\n"
+        "(Like/Dislike, Views, Share, URL buttons — all supported!)",
+        parse_mode=ParseMode.HTML,
+        reply_markup=project_panel_reply_kb(existing_types)
+    )
+    return PROJ_MANAGE_BTNS
+
+
+def _proj_existing_types(ctx) -> set:
+    """Return set of button_types already in project_buttons."""
+    return {b['button_type'] for b in ctx.user_data.get('proj_buttons', [])}
+
+
+async def _proj_refresh_panel(update, ctx, extra=""):
+    btns   = ctx.user_data.get('proj_buttons', [])
+    ch     = ctx.user_data.get('proj_channel_title', 'Channel')
+    types  = _proj_existing_types(ctx)
+    await update.message.reply_text(
+        f"🎛️ <b>Project: {ch}</b>\n"
+        f"Buttons: <b>{len(btns)}</b>{' | ' + extra if extra else ''}\n\n"
+        "Add or remove buttons 👇",
+        parse_mode=ParseMode.HTML,
+        reply_markup=project_panel_reply_kb(types)
+    )
+
+
+async def on_proj_add_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    btns = ctx.user_data.get('proj_buttons', [])
+    if len(btns) >= MAX_BUTTONS_PER_POST:
+        await update.message.reply_text(f"⚠️ Max {MAX_BUTTONS_PER_POST} buttons!")
+        return PROJ_MANAGE_BTNS
+    ctx.user_data['new_btn']   = {}
+    ctx.user_data['btn_mode']  = 'project'
+    await update.message.reply_text(
+        "🏷️ <b>Add URL Button</b>\n\nSend the <b>button label text</b>:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_only_reply_kb()
+    )
+    return ADDING_URL_TEXT
+
+
+async def on_proj_add_ld(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    existing = _proj_existing_types(ctx)
+    if 'like' in existing:
+        await update.message.reply_text("👍👎 Already added!")
+        return PROJ_MANAGE_BTNS
+    btns = ctx.user_data.setdefault('proj_buttons', [])
+    row  = max((b.get('row_num', 0) for b in btns), default=-1) + 1
+    btns.append({'button_type': 'like',    'row_num': row, 'order_num': 0})
+    btns.append({'button_type': 'dislike', 'row_num': row, 'order_num': 1})
+    await _proj_refresh_panel(update, ctx, "👍👎 Added!")
+    return PROJ_MANAGE_BTNS
+
+
+async def on_proj_add_views(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    existing = _proj_existing_types(ctx)
+    if 'views' in existing:
+        await update.message.reply_text("👁️ Views already added!")
+        return PROJ_MANAGE_BTNS
+    btns = ctx.user_data.setdefault('proj_buttons', [])
+    row  = max((b.get('row_num', 0) for b in btns), default=-1) + 1
+    btns.append({'button_type': 'views', 'row_num': row, 'order_num': 0})
+    await _proj_refresh_panel(update, ctx, "👁️ Views Added!")
+    return PROJ_MANAGE_BTNS
+
+
+async def on_proj_add_share(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    existing = _proj_existing_types(ctx)
+    if 'share' in existing:
+        await update.message.reply_text("📤 Share already added!")
+        return PROJ_MANAGE_BTNS
+    btns = ctx.user_data.setdefault('proj_buttons', [])
+    row  = max((b.get('row_num', 0) for b in btns), default=-1) + 1
+    btns.append({'button_type': 'share', 'row_num': row, 'order_num': 0})
+    await _proj_refresh_panel(update, ctx, "📤 Share Added!")
+    return PROJ_MANAGE_BTNS
+
+
+async def on_proj_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.user_data['proj_buttons'] = []
+    await _proj_refresh_panel(update, ctx, "🗑️ All cleared!")
+    return PROJ_MANAGE_BTNS
+
+
+async def on_proj_preview(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    btns   = ctx.user_data.get('proj_buttons', [])
+    ch_id  = ctx.user_data.get('proj_channel_id', '0')
+    uname  = await _get_username(ctx.bot)
+    kb     = project_post_keyboard(ch_id, 0, btns, bot_username=uname)
+    await update.message.reply_text(
+        "📝 <b>DEMO POST</b>\n\n"
+        "This is a preview of how your channel posts will look with buttons.\n\n"
+        "<i>Note: Like/Dislike/Views counts will start at 0 for real posts.</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    return PROJ_MANAGE_BTNS
+
+
+async def on_proj_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id    = update.effective_user.id
+    channel_id = ctx.user_data.get('proj_channel_id')
+    ch_title   = ctx.user_data.get('proj_channel_title', channel_id)
+    btns       = ctx.user_data.get('proj_buttons', [])
+
+    if not channel_id:
+        await update.message.reply_text("❌ No channel set. Please restart the process.")
+        return await on_cancel_to_menu(update, ctx)
+    if not btns:
+        await update.message.reply_text("⚠️ Add at least one button before saving!")
+        return PROJ_MANAGE_BTNS
+
+    buttons_json = json.dumps(btns)
+    await db.save_channel_project(user_id, channel_id, ch_title, buttons_json)
+
+    # Build a preview keyboard
+    uname = await _get_username(ctx.bot)
+    kb    = project_post_keyboard(channel_id, 0, btns, bot_username=uname)
+
+    await update.message.reply_text(
+        f"✅ <b>Project Saved!</b>\n\n"
+        f"📢 Channel: <b>{ch_title}</b>\n"
+        f"🔘 Buttons: <b>{len(btns)}</b>\n\n"
+        "Every <b>new post</b> in this channel will automatically get these buttons! 🚀\n\n"
+        "<i>Below is how your posts will look:</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=main_menu_reply_kb()
+    )
+    if kb:
+        await update.message.reply_text(
+            "📝 <b>Preview:</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
+    ctx.user_data.clear()
+    return MAIN_MENU
+
+
+async def on_proj_templates(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Quick templates for project button setup."""
+    ctx.user_data['btn_mode'] = 'project'
+    await update.message.reply_text(
+        "⚡ <b>Quick Templates</b>\n\nChoose a ready-made button set:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=templates_reply_kb()
+    )
+    return IN_TEMPLATES
+
+
+# ═══════════════════════════════════════════════════════
+#   ADD BUTTON TO A CHANNEL POST — Setup
+# ═══════════════════════════════════════════════════════
+
+def _parse_tme_link(link: str):
+    """
+    Parse a t.me post link into (channel_id_or_username, message_id).
+    Supports:
+      https://t.me/channame/123      → '@channame', 123
+      https://t.me/c/1234567890/123  → '-1001234567890', 123
+    """
+    # Private channel: t.me/c/CHANNEL_ID/MSG_ID
+    m = re.match(r'https?://t\.me/c/(\d+)/(\d+)', link.strip())
+    if m:
+        return f'-100{m.group(1)}', int(m.group(2))
+    # Public channel: t.me/username/MSG_ID
+    m = re.match(r'https?://t\.me/([A-Za-z0-9_]+)/(\d+)', link.strip())
+    if m:
+        return f'@{m.group(1)}', int(m.group(2))
+    return None, None
+
+
+async def on_add_to_post_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """User chose 🔗 Add Button to Post."""
+    await update.message.reply_text(
+        "🔗 <b>Add Button to a Channel Post</b>\n\n"
+        "Send the link to the post you want to add buttons to:\n\n"
+        "📋 <b>Format:</b>\n"
+        "  • <code>https://t.me/yourchannel/123</code>\n"
+        "  • <code>https://t.me/c/1234567890/123</code>\n\n"
+        "⚠️ The bot must be an admin in that channel.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_only_reply_kb()
+    )
+    ctx.user_data['atp_buttons'] = []
+    return POST_WAIT_LINK
+
+
+async def receive_post_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Parse t.me link, verify channel, start button config."""
+    link = update.message.text.strip()
+    channel_ref, msg_id = _parse_tme_link(link)
+
+    if not channel_ref or not msg_id:
+        await update.message.reply_text(
+            "❌ Invalid link format.\n\n"
+            "Please send a link like:\n"
+            "<code>https://t.me/channelname/123</code>\n"
+            "or <code>https://t.me/c/1234567890/123</code>",
+            parse_mode=ParseMode.HTML
+        )
+        return POST_WAIT_LINK
+
+    # Verify channel access
+    channel_title = channel_ref
+    try:
+        chat = await ctx.bot.get_chat(channel_ref)
+        channel_title = chat.title or chat.username or channel_ref
+        # Normalize to numeric ID for editing
+        channel_ref = str(chat.id)
+    except Exception:
+        await update.message.reply_text(
+            "❌ Cannot access that channel.\n\n"
+            "Make sure the bot is an admin there, then try again.",
+            parse_mode=ParseMode.HTML
+        )
+        return POST_WAIT_LINK
+
+    ctx.user_data['atp_channel_id']    = channel_ref
+    ctx.user_data['atp_channel_title'] = channel_title
+    ctx.user_data['atp_msg_id']        = msg_id
+    ctx.user_data['atp_buttons']       = []
+
+    await update.message.reply_text(
+        f"✅ <b>Post found!</b>\n\n"
+        f"📢 Channel: <b>{channel_title}</b>\n"
+        f"📝 Message ID: <b>{msg_id}</b>\n\n"
+        "Click ➕ to add buttons 👇",
+        parse_mode=ParseMode.HTML,
+        reply_markup=project_panel_reply_kb(set())
+    )
+    return POST_MANAGE_BTNS
+
+
+def _atp_existing_types(ctx) -> set:
+    return {b['button_type'] for b in ctx.user_data.get('atp_buttons', [])}
+
+
+async def _atp_refresh_panel(update, ctx, extra=""):
+    btns  = ctx.user_data.get('atp_buttons', [])
+    ch    = ctx.user_data.get('atp_channel_title', 'Post')
+    mid   = ctx.user_data.get('atp_msg_id', '?')
+    types = _atp_existing_types(ctx)
+    await update.message.reply_text(
+        f"🎛️ <b>Post #{mid}</b> in <b>{ch}</b>\n"
+        f"Buttons: <b>{len(btns)}</b>{' | ' + extra if extra else ''}\n\n"
+        "Add buttons 👇",
+        parse_mode=ParseMode.HTML,
+        reply_markup=project_panel_reply_kb(types)
+    )
+
+
+async def on_atp_add_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    btns = ctx.user_data.get('atp_buttons', [])
+    if len(btns) >= MAX_BUTTONS_PER_POST:
+        await update.message.reply_text(f"⚠️ Max {MAX_BUTTONS_PER_POST} buttons!")
+        return POST_MANAGE_BTNS
+    ctx.user_data['new_btn']   = {}
+    ctx.user_data['btn_mode']  = 'add_to_post'
+    await update.message.reply_text(
+        "🏷️ <b>Add URL Button</b>\n\nSend the <b>button label text</b>:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_only_reply_kb()
+    )
+    return ADDING_URL_TEXT
+
+
+async def on_atp_add_ld(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    existing = _atp_existing_types(ctx)
+    if 'like' in existing:
+        await update.message.reply_text("👍👎 Already added!")
+        return POST_MANAGE_BTNS
+    btns = ctx.user_data.setdefault('atp_buttons', [])
+    row  = max((b.get('row_num', 0) for b in btns), default=-1) + 1
+    btns.append({'button_type': 'like',    'row_num': row, 'order_num': 0})
+    btns.append({'button_type': 'dislike', 'row_num': row, 'order_num': 1})
+    await _atp_refresh_panel(update, ctx, "👍👎 Added!")
+    return POST_MANAGE_BTNS
+
+
+async def on_atp_add_views(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    existing = _atp_existing_types(ctx)
+    if 'views' in existing:
+        await update.message.reply_text("👁️ Already added!")
+        return POST_MANAGE_BTNS
+    btns = ctx.user_data.setdefault('atp_buttons', [])
+    row  = max((b.get('row_num', 0) for b in btns), default=-1) + 1
+    btns.append({'button_type': 'views', 'row_num': row, 'order_num': 0})
+    await _atp_refresh_panel(update, ctx, "👁️ Views Added!")
+    return POST_MANAGE_BTNS
+
+
+async def on_atp_add_share(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    existing = _atp_existing_types(ctx)
+    if 'share' in existing:
+        await update.message.reply_text("📤 Already added!")
+        return POST_MANAGE_BTNS
+    btns = ctx.user_data.setdefault('atp_buttons', [])
+    row  = max((b.get('row_num', 0) for b in btns), default=-1) + 1
+    btns.append({'button_type': 'share', 'row_num': row, 'order_num': 0})
+    await _atp_refresh_panel(update, ctx, "📤 Share Added!")
+    return POST_MANAGE_BTNS
+
+
+async def on_atp_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.user_data['atp_buttons'] = []
+    await _atp_refresh_panel(update, ctx, "🗑️ Cleared!")
+    return POST_MANAGE_BTNS
+
+
+async def on_atp_preview(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    btns   = ctx.user_data.get('atp_buttons', [])
+    ch_id  = ctx.user_data.get('atp_channel_id', '0')
+    mid    = ctx.user_data.get('atp_msg_id', 0)
+    uname  = await _get_username(ctx.bot)
+    kb     = project_post_keyboard(ch_id, mid, btns, bot_username=uname)
+    await update.message.reply_text(
+        "👁 <b>Preview:</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    return POST_MANAGE_BTNS
+
+
+async def on_atp_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Edit the actual channel post with configured buttons."""
+    channel_id = ctx.user_data.get('atp_channel_id')
+    msg_id     = ctx.user_data.get('atp_msg_id')
+    ch_title   = ctx.user_data.get('atp_channel_title', channel_id)
+    btns       = ctx.user_data.get('atp_buttons', [])
+
+    if not channel_id or not msg_id:
+        await update.message.reply_text("❌ No post set. Please restart.")
+        return await on_cancel_to_menu(update, ctx)
+    if not btns:
+        await update.message.reply_text("⚠️ Add at least one button first!")
+        return POST_MANAGE_BTNS
+
+    uname  = await _get_username(ctx.bot)
+    counts = await db.get_or_create_channel_reactions(channel_id, msg_id)
+    kb     = project_post_keyboard(
+        channel_id, msg_id, btns,
+        likes=counts['likes'], dislikes=counts['dislikes'], views=counts['views'],
+        bot_username=uname
+    )
+
+    try:
+        await ctx.bot.edit_message_reply_markup(
+            chat_id=int(channel_id), message_id=msg_id, reply_markup=kb
+        )
+        post_url = f"https://t.me/c/{channel_id.replace('-100', '')}/{msg_id}"
+        await update.message.reply_text(
+            f"✅ <b>Buttons Added Successfully!</b>\n\n"
+            f"📢 Channel: <b>{ch_title}</b>\n"
+            f"📝 Message ID: <b>{msg_id}</b>\n"
+            f"🔘 Buttons: <b>{len(btns)}</b> added\n\n"
+            f"The buttons have been applied to the channel post! 🚀",
+            parse_mode=ParseMode.HTML,
+            reply_markup=main_menu_reply_kb()
+        )
+        await update.message.reply_text(
+            "👇 View the post:",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔗 View Post", url=post_url,
+                                     api_kwargs={"style": "primary"})
+            ]])
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Failed to edit the post: <code>{e}</code>\n\n"
+            "Make sure the bot is an admin with <i>Edit Messages</i> permission.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=main_menu_reply_kb()
+        )
+    ctx.user_data.clear()
+    return MAIN_MENU
+
+
+# ═══════════════════════════════════════════════════════
+#   MY PROJECTS — View & Manage
+# ═══════════════════════════════════════════════════════
+
+async def on_my_projects(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id  = update.effective_user.id
+    projects = await db.get_user_projects(user_id)
+    if not projects:
+        await update.message.reply_text(
+            "📁 <b>My Projects</b>\n\n"
+            "You have no projects yet.\n\n"
+            "Use <b>⚡ Auto Button Project</b> to create your first one!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=auto_adder_reply_kb()
+        )
+        return AUTO_ADDER_HOME
+
+    lines = []
+    for i, p in enumerate(projects, 1):
+        title  = p.get('channel_title') or p['channel_id']
+        status = "🟢 Active" if p['is_active'] else "⏸️ Paused"
+        date   = p['created_at'][:10]
+        lines.append(f"<b>{i}. 📢 {title}</b>\n   {status}  •  📅 {date}")
+
+    text = (
+        f"📁 <b>My Projects</b>\n\n"
+        + "\n\n".join(lines)
+        + f"\n\n📊 Total: <b>{len(projects)}</b>"
+    )
+    await update.message.reply_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=my_projects_inline_kb(projects)
+    )
+    return AUTO_ADDER_HOME
+
+
+async def projects_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle inline callbacks from My Projects keyboard."""
+    q = update.callback_query
+    await q.answer()
+    user_id = update.effective_user.id
+
+    if q.data.startswith("proj_del|"):
+        pid = int(q.data.split("|")[1])
+        ok  = await db.delete_channel_project(user_id, pid)
+        if ok:
+            projects = await db.get_user_projects(user_id)
+            if projects:
+                await q.message.edit_reply_markup(reply_markup=my_projects_inline_kb(projects))
+                await q.answer("✅ Project deleted!", show_alert=False)
+            else:
+                await q.message.edit_text("📁 No projects remaining.")
+        else:
+            await q.answer("❌ Could not delete.", show_alert=True)
+
+    elif q.data.startswith("proj_toggle|"):
+        pid      = int(q.data.split("|")[1])
+        projects = await db.get_user_projects(user_id)
+        proj     = next((p for p in projects if p['id'] == pid), None)
+        if proj:
+            new_state = not bool(proj['is_active'])
+            await db.toggle_channel_project(user_id, pid, new_state)
+            projects = await db.get_user_projects(user_id)
+            await q.message.edit_reply_markup(reply_markup=my_projects_inline_kb(projects))
+            status = "🟢 Activated" if new_state else "⏸️ Paused"
+            await q.answer(f"{status}!", show_alert=False)
+
+    elif q.data == "proj_back":
+        await q.message.edit_reply_markup(reply_markup=None)
+
+
+# ═══════════════════════════════════════════════════════
+#   CHANNEL POST HANDLER — Auto-apply buttons to new posts
+# ═══════════════════════════════════════════════════════
+
+async def on_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Triggered when a new post appears in a channel where the bot is admin.
+    Looks up the project for that channel and auto-applies buttons.
+    """
+    post = update.channel_post
+    if not post:
+        return
+
+    channel_id = str(post.chat_id)
+    msg_id     = post.message_id
+
+    project = await db.get_channel_project(channel_id)
+    if not project or not project['is_active']:
+        return
+
+    try:
+        btns = json.loads(project.get('buttons_json', '[]'))
+    except Exception:
+        return
+
+    if not btns:
+        return
+
+    counts = await db.get_or_create_channel_reactions(channel_id, msg_id)
+    uname  = await _get_username(ctx.bot)
+    kb     = project_post_keyboard(
+        channel_id, msg_id, btns,
+        likes=counts['likes'], dislikes=counts['dislikes'], views=counts['views'],
+        bot_username=uname
+    )
+    if not kb:
+        return
+
+    try:
+        await ctx.bot.edit_message_reply_markup(
+            chat_id=post.chat_id, message_id=msg_id, reply_markup=kb
+        )
+        logger.info(f"Auto-added buttons to {channel_id}/{msg_id}")
+    except Exception as e:
+        logger.warning(f"Auto-adder failed for {channel_id}/{msg_id}: {e}")
+
+
+# ═══════════════════════════════════════════════════════
+#   CHANNEL POST REACTIONS — chreact callbacks
+# ═══════════════════════════════════════════════════════
+
+async def channel_reaction_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Handle chreact|like|CHANNEL_ID|MSG_ID
+             chreact|dislike|CHANNEL_ID|MSG_ID
+             chreact|views|CHANNEL_ID|MSG_ID
+    """
+    q = update.callback_query
+    await q.answer()
+    user_id = update.effective_user.id
+
+    parts = q.data.split("|")
+    if len(parts) != 4:
+        return
+    _, reaction, channel_id, msg_id_str = parts
+    msg_id = int(msg_id_str)
+
+    # Get the project to know the button config
+    project = await db.get_channel_project(channel_id)
+    if not project:
+        await q.answer("⚠️ Project not found.", show_alert=True)
+        return
+
+    try:
+        btns = json.loads(project.get('buttons_json', '[]'))
+    except Exception:
+        return
+
+    if reaction in ('like', 'dislike'):
+        counts = await db.set_channel_user_reaction(channel_id, msg_id, user_id, reaction)
+    elif reaction == 'views':
+        counts = await db.add_channel_view(channel_id, msg_id, user_id)
+    else:
+        return
+
+    uname = await _get_username(ctx.bot)
+    kb    = project_post_keyboard(
+        channel_id, msg_id, btns,
+        likes=counts['likes'], dislikes=counts['dislikes'], views=counts['views'],
+        bot_username=uname
+    )
+    try:
+        await q.edit_message_reply_markup(reply_markup=kb)
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════════════════
+#   Shared URL button flow — MODE-AWARE receive_button_row
+# ═══════════════════════════════════════════════════════
+# receive_button_text / receive_button_url / receive_button_color stay unchanged.
+# receive_button_row is updated below to support 'project' and 'add_to_post' modes.
+
+
 # ═══════════════════════════════════════════════════════
 #           BUILD APPLICATION
 # ═══════════════════════════════════════════════════════
@@ -1409,18 +2187,19 @@ def build_app() -> Application:
         ],
         states={
             MAIN_MENU: [
-                MessageHandler(txt(BTN_CREATE),   on_create_post),
-                MessageHandler(txt(BTN_MYPOSTS),  on_my_posts),
-                MessageHandler(txt(BTN_CHANNEL),  on_send_channel),
-                MessageHandler(txt(BTN_STATS),    on_stats),
-                MessageHandler(txt(BTN_HELP),     on_help),
-                MessageHandler(txt(BTN_SETTINGS), on_settings),
-                MessageHandler(txt(BTN_CANCEL),   on_cancel_to_menu),
+                MessageHandler(txt(BTN_CREATE),      on_create_post),
+                MessageHandler(txt(BTN_MYPOSTS),     on_my_posts),
+                MessageHandler(txt(BTN_CHANNEL),     on_send_channel),
+                MessageHandler(txt(BTN_STATS),       on_stats),
+                MessageHandler(txt(BTN_HELP),        on_help),
+                MessageHandler(txt(BTN_SETTINGS),    on_settings),
+                MessageHandler(txt(BTN_AUTO_ADDER),  on_auto_adder),
+                MessageHandler(txt(BTN_CANCEL),      on_cancel_to_menu),
                 # Inline callbacks that can re-enter flow
-                CallbackQueryHandler(edit_buttons_callback, pattern=r"^edit_btns\|"),
-                CallbackQueryHandler(sendch_callback,       pattern=r"^sendch\|"),
-                CallbackQueryHandler(channel_manager_callback, pattern=r"^(addchan|delchan\||pickchan\||rmchan|donechan|cancel)"),
-                CallbackQueryHandler(inline_create_callback, pattern="^inline_create$"),
+                CallbackQueryHandler(edit_buttons_callback,      pattern=r"^edit_btns\|"),
+                CallbackQueryHandler(sendch_callback,            pattern=r"^sendch\|"),
+                CallbackQueryHandler(channel_manager_callback,   pattern=r"^(addchan|delchan\||pickchan\||rmchan|donechan|cancel)"),
+                CallbackQueryHandler(inline_create_callback,     pattern="^inline_create$"),
             ],
             WAITING_CONTENT: [
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
@@ -1469,8 +2248,46 @@ def build_app() -> Application:
             ],
             WAITING_CHANNEL_POST_ID: [
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
-                # Accept any numeric input (post IDs like 1, 2, 10, 100)
                 MessageHandler(filters.Regex(r'^\d+$'), receive_channel_post_id),
+            ],
+            # ─── Auto Button Adder states ─────────────────────────
+            AUTO_ADDER_HOME: [
+                MessageHandler(txt(BTN_PROJ_NEW),      on_proj_start),
+                MessageHandler(txt(BTN_PROJ_ADD_POST), on_add_to_post_start),
+                MessageHandler(txt(BTN_MY_PROJECTS),   on_my_projects),
+                MessageHandler(txt(BTN_BACK_MAIN),     on_back_to_main),
+                MessageHandler(txt(BTN_CANCEL),        on_cancel_to_menu),
+                CallbackQueryHandler(projects_callback, pattern=r"^(proj_del|proj_toggle|proj_back)"),
+            ],
+            PROJ_WAIT_FWD: [
+                MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
+                MessageHandler(filters.ALL & ~nav_filter, receive_proj_forward),
+            ],
+            PROJ_MANAGE_BTNS: [
+                MessageHandler(txt(BTN_ADD_URL),   on_proj_add_url),
+                MessageHandler(txt(BTN_ADD_LD),    on_proj_add_ld),
+                MessageHandler(txt(BTN_ADD_VIEWS), on_proj_add_views),
+                MessageHandler(txt(BTN_ADD_SHARE), on_proj_add_share),
+                MessageHandler(txt(BTN_TEMPLATES), on_proj_templates),
+                MessageHandler(txt(BTN_CLEAR),     on_proj_clear),
+                MessageHandler(txt(BTN_PREVIEW),   on_proj_preview),
+                MessageHandler(txt(BTN_DONE),      on_proj_done),
+                MessageHandler(txt(BTN_CANCEL),    on_cancel_to_menu),
+            ],
+            POST_WAIT_LINK: [
+                MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
+                MessageHandler(filters.TEXT & ~nav_filter, receive_post_link),
+            ],
+            POST_MANAGE_BTNS: [
+                MessageHandler(txt(BTN_ADD_URL),   on_atp_add_url),
+                MessageHandler(txt(BTN_ADD_LD),    on_atp_add_ld),
+                MessageHandler(txt(BTN_ADD_VIEWS), on_atp_add_views),
+                MessageHandler(txt(BTN_ADD_SHARE), on_atp_add_share),
+                MessageHandler(txt(BTN_TEMPLATES), on_proj_templates),  # reuse same template picker
+                MessageHandler(txt(BTN_CLEAR),     on_atp_clear),
+                MessageHandler(txt(BTN_PREVIEW),   on_atp_preview),
+                MessageHandler(txt(BTN_DONE),      on_atp_done),
+                MessageHandler(txt(BTN_CANCEL),    on_cancel_to_menu),
             ],
         },
         fallbacks=[
@@ -1486,17 +2303,23 @@ def build_app() -> Application:
     app.add_handler(conv)
 
     # ─── Outside-conversation inline callbacks ─────────────
-    app.add_handler(CallbackQueryHandler(reaction_callback,     pattern=r"^react\|"))
-    app.add_handler(CallbackQueryHandler(posts_page_callback,   pattern=r"^posts_page\|"))
-    app.add_handler(CallbackQueryHandler(post_menu_callback,    pattern=r"^postmenu\|"))
-    app.add_handler(CallbackQueryHandler(post_stats_callback,   pattern=r"^poststats\|"))
-    app.add_handler(CallbackQueryHandler(delete_post_callback,  pattern=r"^delpost\|"))
+    app.add_handler(CallbackQueryHandler(reaction_callback,       pattern=r"^react\|"))
+    app.add_handler(CallbackQueryHandler(channel_reaction_callback, pattern=r"^chreact\|"))
+    app.add_handler(CallbackQueryHandler(projects_callback,       pattern=r"^(proj_del|proj_toggle|proj_back)"))
+    app.add_handler(CallbackQueryHandler(posts_page_callback,     pattern=r"^posts_page\|"))
+    app.add_handler(CallbackQueryHandler(post_menu_callback,      pattern=r"^postmenu\|"))
+    app.add_handler(CallbackQueryHandler(post_stats_callback,     pattern=r"^poststats\|"))
+    app.add_handler(CallbackQueryHandler(delete_post_callback,    pattern=r"^delpost\|"))
     app.add_handler(CallbackQueryHandler(confirm_delete_callback, pattern=r"^confirmdelete\|"))
     app.add_handler(CallbackQueryHandler(inline_myposts_callback, pattern=r"^inline_myposts$"))
     app.add_handler(CallbackQueryHandler(help_callback,           pattern=r"^help\|"))
     app.add_handler(CallbackQueryHandler(check_join_callback,     pattern=r"^check_join$"))
     app.add_handler(CallbackQueryHandler(welcome_launch_callback, pattern=r"^welcome_launch$"))
     app.add_handler(CallbackQueryHandler(welcome_help_callback,   pattern=r"^welcome_help$"))
+
+    # ─── Channel post handler (auto button adder) ──────────
+    app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, on_channel_post))
+
     # ─── Inline mode ──────────────────────────────────────
     app.add_handler(InlineQueryHandler(inline_query))
     app.add_handler(ChosenInlineResultHandler(chosen_inline_result))

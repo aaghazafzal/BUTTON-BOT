@@ -83,11 +83,47 @@ async def init_db():
                 id                     INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id                INTEGER NOT NULL,
                 channel_username_or_id TEXT NOT NULL,
+                channel_title          TEXT DEFAULT NULL,
                 created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(user_id, channel_username_or_id)
             );
+
+            CREATE TABLE IF NOT EXISTS channel_projects (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id       INTEGER NOT NULL,
+                channel_id    TEXT NOT NULL,
+                channel_title TEXT,
+                buttons_json  TEXT NOT NULL DEFAULT '[]',
+                is_active     INTEGER DEFAULT 1,
+                created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(channel_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS channel_post_reactions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                likes      INTEGER DEFAULT 0,
+                dislikes   INTEGER DEFAULT 0,
+                views      INTEGER DEFAULT 0,
+                UNIQUE(channel_id, message_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS channel_post_user_reactions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                user_id    INTEGER NOT NULL,
+                reaction   TEXT NOT NULL,
+                UNIQUE(channel_id, message_id, user_id)
+            );
         """)
-        await db.commit()
+        # Migration: add channel_title column if it doesn't exist yet (safe for old DBs)
+        try:
+            await db.execute("ALTER TABLE user_channels ADD COLUMN channel_title TEXT DEFAULT NULL")
+            await db.commit()
+        except Exception:
+            pass  # Column already exists — no problem
 
 
 # ═══════════════════════════════════════════
@@ -365,13 +401,13 @@ async def get_user_channels(user_id: int) -> list[dict]:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
-async def add_user_channel(user_id: int, channel: str) -> bool:
-    """Adds a channel, returns True if added, False if already exists or limit reached (handled outside)."""
+async def add_user_channel(user_id: int, channel: str, title: str = None) -> bool:
+    """Adds a channel with optional display title. Returns True if added."""
     async with aiosqlite.connect(DB_PATH) as db:
         try:
             await db.execute(
-                "INSERT INTO user_channels (user_id, channel_username_or_id) VALUES (?, ?)",
-                (user_id, channel)
+                "INSERT INTO user_channels (user_id, channel_username_or_id, channel_title) VALUES (?, ?, ?)",
+                (user_id, channel, title)
             )
             await db.commit()
             return True
@@ -392,3 +428,215 @@ async def count_user_channels(user_id: int) -> int:
         async with db.execute("SELECT COUNT(*) FROM user_channels WHERE user_id = ?", (user_id,)) as cur:
             row = await cur.fetchone()
             return row[0] if row else 0
+
+async def update_channel_title(row_id: int, title: str) -> None:
+    """Update the display title for a saved channel row."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE user_channels SET channel_title = ? WHERE id = ?",
+            (title, row_id)
+        )
+        await db.commit()
+
+
+# ═══════════════════════════════════════════
+#           CHANNEL PROJECTS (Auto Button Adder)
+# ═══════════════════════════════════════════
+
+async def save_channel_project(user_id: int, channel_id: str,
+                                channel_title: str, buttons_json: str) -> int:
+    """Insert or replace a project for a channel. Returns the row id."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """INSERT INTO channel_projects (user_id, channel_id, channel_title, buttons_json)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(channel_id) DO UPDATE SET
+                 user_id=excluded.user_id,
+                 channel_title=excluded.channel_title,
+                 buttons_json=excluded.buttons_json,
+                 is_active=1,
+                 created_at=CURRENT_TIMESTAMP""",
+            (user_id, channel_id, channel_title, buttons_json)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_channel_project(channel_id: str) -> dict | None:
+    """Get the active project for a channel (any user)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM channel_projects WHERE channel_id = ? AND is_active = 1",
+            (channel_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def get_user_projects(user_id: int) -> list[dict]:
+    """Get all projects owned by the user."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM channel_projects WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,)
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def delete_channel_project(user_id: int, project_id: int) -> bool:
+    """Delete a project owned by the user."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM channel_projects WHERE id = ? AND user_id = ?",
+            (project_id, user_id)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def toggle_channel_project(user_id: int, project_id: int, active: bool) -> None:
+    """Enable or disable a project."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE channel_projects SET is_active = ? WHERE id = ? AND user_id = ?",
+            (1 if active else 0, project_id, user_id)
+        )
+        await db.commit()
+
+
+# ═══════════════════════════════════════════
+#      CHANNEL POST REACTIONS  (Auto Button Adder)
+# ═══════════════════════════════════════════
+
+async def get_or_create_channel_reactions(channel_id: str, message_id: int) -> dict:
+    """Return reaction counts for a channel post, creating the row if needed."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute(
+            "INSERT OR IGNORE INTO channel_post_reactions (channel_id, message_id) VALUES (?, ?)",
+            (channel_id, message_id)
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT likes, dislikes, views FROM channel_post_reactions WHERE channel_id=? AND message_id=?",
+            (channel_id, message_id)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else {"likes": 0, "dislikes": 0, "views": 0}
+
+
+async def get_channel_user_reaction(channel_id: str, message_id: int, user_id: int) -> str | None:
+    """Return the user's existing reaction ('like'|'dislike'|'views') or None."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT reaction FROM channel_post_user_reactions WHERE channel_id=? AND message_id=? AND user_id=?",
+            (channel_id, message_id, user_id)
+        ) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else None
+
+
+async def set_channel_user_reaction(channel_id: str, message_id: int,
+                                     user_id: int, reaction: str) -> dict:
+    """
+    Toggle like/dislike for a channel post. Returns new counts dict.
+    - If user already reacted with SAME reaction → remove it (toggle off)
+    - If user reacted with DIFFERENT reaction → switch
+    - If no prior reaction → add it
+    Only like/dislike are togglable; views are additive (one per user).
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # Ensure reaction row exists
+        await db.execute(
+            "INSERT OR IGNORE INTO channel_post_reactions (channel_id, message_id) VALUES (?, ?)",
+            (channel_id, message_id)
+        )
+        existing = None
+        async with db.execute(
+            "SELECT reaction FROM channel_post_user_reactions WHERE channel_id=? AND message_id=? AND user_id=?",
+            (channel_id, message_id, user_id)
+        ) as cur:
+            row = await cur.fetchone()
+            existing = row[0] if row else None
+
+        if existing == reaction:
+            # Toggle off
+            await db.execute(
+                "DELETE FROM channel_post_user_reactions WHERE channel_id=? AND message_id=? AND user_id=?",
+                (channel_id, message_id, user_id)
+            )
+            col = "likes" if reaction == "like" else "dislikes"
+            await db.execute(
+                f"UPDATE channel_post_reactions SET {col} = MAX(0, {col} - 1) WHERE channel_id=? AND message_id=?",
+                (channel_id, message_id)
+            )
+        elif existing:
+            # Switch reaction
+            await db.execute(
+                "UPDATE channel_post_user_reactions SET reaction=? WHERE channel_id=? AND message_id=? AND user_id=?",
+                (reaction, channel_id, message_id, user_id)
+            )
+            old_col = "likes" if existing == "like" else "dislikes"
+            new_col = "likes" if reaction == "like" else "dislikes"
+            await db.execute(
+                f"UPDATE channel_post_reactions SET {old_col}=MAX(0,{old_col}-1), {new_col}={new_col}+1 WHERE channel_id=? AND message_id=?",
+                (channel_id, message_id)
+            )
+        else:
+            # New reaction
+            await db.execute(
+                "INSERT INTO channel_post_user_reactions (channel_id, message_id, user_id, reaction) VALUES (?,?,?,?)",
+                (channel_id, message_id, user_id, reaction)
+            )
+            col = "likes" if reaction == "like" else "dislikes"
+            await db.execute(
+                f"UPDATE channel_post_reactions SET {col}={col}+1 WHERE channel_id=? AND message_id=?",
+                (channel_id, message_id)
+            )
+
+        await db.commit()
+        async with db.execute(
+            "SELECT likes, dislikes, views FROM channel_post_reactions WHERE channel_id=? AND message_id=?",
+            (channel_id, message_id)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else {"likes": 0, "dislikes": 0, "views": 0}
+
+
+async def add_channel_view(channel_id: str, message_id: int, user_id: int) -> dict:
+    """
+    Increment views for a channel post (one per user).
+    Returns updated counts.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute(
+            "INSERT OR IGNORE INTO channel_post_reactions (channel_id, message_id) VALUES (?, ?)",
+            (channel_id, message_id)
+        )
+        # Only count if not already viewed
+        async with db.execute(
+            "SELECT 1 FROM channel_post_user_reactions WHERE channel_id=? AND message_id=? AND user_id=? AND reaction='views'",
+            (channel_id, message_id, user_id)
+        ) as cur:
+            already = await cur.fetchone()
+        if not already:
+            await db.execute(
+                "INSERT OR IGNORE INTO channel_post_user_reactions (channel_id, message_id, user_id, reaction) VALUES (?,?,?,'views')",
+                (channel_id, message_id, user_id)
+            )
+            await db.execute(
+                "UPDATE channel_post_reactions SET views=views+1 WHERE channel_id=? AND message_id=?",
+                (channel_id, message_id)
+            )
+        await db.commit()
+        async with db.execute(
+            "SELECT likes, dislikes, views FROM channel_post_reactions WHERE channel_id=? AND message_id=?",
+            (channel_id, message_id)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else {"likes": 0, "dislikes": 0, "views": 0}
