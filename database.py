@@ -51,6 +51,7 @@ def _proj():         return _db()["channel_projects"]
 def _chreact():      return _db()["channel_post_reactions"]
 def _chureact():     return _db()["channel_post_user_reactions"]
 def _ctr():          return _db()["counters"]
+def _users():        return _db()["users"]              # all registered users
 
 
 # ── Auto-increment integer IDs ─────────────────────────────────────────────────
@@ -84,6 +85,9 @@ def _rows(docs: list[dict]) -> list[dict]:
 
 async def init_db():
     """Create all necessary MongoDB indexes."""
+    await _users().create_index([("user_id", ASCENDING)], unique=True)
+    await _users().create_index([("joined_at", ASCENDING)])
+
     await _posts().create_index([("user_id", ASCENDING)])
     await _posts().create_index([("created_at", ASCENDING)])
 
@@ -115,6 +119,48 @@ async def init_db():
     )
 
     logger.info("database: ✅ MongoDB connected and indexes ensured.")
+
+
+# ══════════════════════════════════════════════════════════
+#   USER REGISTRATION
+# ══════════════════════════════════════════════════════════
+
+async def register_user(user_id: int, username: str = None,
+                        first_name: str = None, last_name: str = None) -> bool:
+    """
+    Register (or update) a user on /start.
+    Returns True if this is a NEW user, False if already registered.
+    """
+    now = datetime.now(timezone.utc)
+    try:
+        result = await _users().update_one(
+            {"user_id": user_id},
+            {
+                "$setOnInsert": {"joined_at": now},
+                "$set": {
+                    "username":   username,
+                    "first_name": first_name,
+                    "last_name":  last_name,
+                    "last_seen":  now,
+                },
+            },
+            upsert=True,
+        )
+        return result.upserted_id is not None   # True = new user
+    except Exception:
+        return False
+
+
+async def count_total_users() -> int:
+    return await _users().count_documents({})
+
+
+async def count_today_users() -> int:
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return await _users().count_documents({"joined_at": {"$gte": today_start}})
+
 
 
 # ══════════════════════════════════════════════════════════
@@ -414,15 +460,13 @@ async def update_channel_title(row_id: int, title: str) -> None:
 
 async def get_global_stats() -> dict:
     """Aggregate bot-wide statistics for /stats command."""
-    from datetime import date
-
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
 
-    # ── Users ────────────────────────────────────────────────
-    total_users = len(await _posts().distinct("user_id"))
-    today_users = len(await _posts().distinct("user_id", {"created_at": {"$gte": today_start}}))
+    # ── Users (from dedicated users collection) ───────────
+    total_users = await _users().count_documents({})
+    today_users = await _users().count_documents({"joined_at": {"$gte": today_start}})
 
     # ── Posts ────────────────────────────────────────────────
     total_posts = await _posts().count_documents({})
@@ -462,7 +506,7 @@ async def get_global_stats() -> dict:
     active_projects = await _proj().count_documents({"is_active": True})
     ch_auto_reacted = await _chreact().count_documents({})
 
-    # ── Top user ─────────────────────────────────────────────
+    # ── Top user (most posts) ─────────────────────────────────
     top_pipeline = [
         {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
         {"$sort":  {"count": -1}},

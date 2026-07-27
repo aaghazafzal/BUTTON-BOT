@@ -164,7 +164,16 @@ async def _send_welcome(update_or_message, ctx, is_message=True):
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
-    user_id = update.effective_user.id
+    user    = update.effective_user
+    user_id = user.id
+
+    # ── Register / update user in MongoDB ──────────────────────────
+    await db.register_user(
+        user_id    = user_id,
+        username   = user.username,
+        first_name = user.first_name,
+        last_name  = user.last_name,
+    )
 
     # Force join check
     if not await _is_member(ctx.bot, user_id, FORCE_JOIN_CHANNEL):
