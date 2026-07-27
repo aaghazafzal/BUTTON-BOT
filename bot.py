@@ -279,18 +279,24 @@ async def cmd_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # If OWNER_IDS is empty → only the person running the command can see it
-    # (fallback for fresh installs where ADMIN_IDS env isn't set)
+    # If OWNER_IDS is empty → any user can call it (fresh install fallback)
 
-    await update.message.reply_text("⏳ Fetching stats…")
+    wait_msg = await update.message.reply_text("⏳ Fetching stats…")
 
-    s = await db.get_global_stats()
+    try:
+        s = await db.get_global_stats()
+    except Exception as e:
+        await wait_msg.edit_text(
+            f"❌ <b>Stats Error</b>\n\n<code>{e}</code>",
+            parse_mode=ParseMode.HTML
+        )
+        return
 
-    # ── Uptime indicator ──────────────────────────────────────
+    # ── Timestamp ──────────────────────────────────────────────
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%d %b %Y • %H:%M UTC")
 
-    # ── Top user mention ──────────────────────────────────────
+    # ── Top user mention ────────────────────────────────────────
     if s["top_user_id"]:
         try:
             chat = await ctx.bot.get_chat(s["top_user_id"])
@@ -324,7 +330,9 @@ async def cmd_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "━━━━━━  ❤️  <b>ENGAGEMENT</b>  ━━━━━━\n"
         f"   Total 👍 Likes      :  <b>{s['total_likes']:,}</b>\n"
         f"   Total 👎 Dislikes   :  <b>{s['total_dislikes']:,}</b>\n"
-        f"   Total 👁️ Views      :  <b>{s['total_views']:,}</b>\n\n"
+        f"   Total 👁️ Views      :  <b>{s['total_views']:,}</b>\n"
+        f"   Total 📤 Shares     :  <b>{s['total_shares']:,}</b>\n"
+        f"   Total Interactions  :  <b>{s['total_reactions']:,}</b>\n\n"
 
         "━━━━━━  📡  <b>CHANNELS</b>  ━━━━━━\n"
         f"   Saved Channels      :  <b>{s['total_saved_channels']:,}</b>\n"
@@ -344,7 +352,7 @@ async def cmd_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
-    await update.message.reply_text(
+    await wait_msg.edit_text(
         card,
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([[
@@ -366,7 +374,12 @@ async def admin_stats_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT
         await q.answer("🔒 Admins only!", show_alert=True)
         return
 
-    s = await db.get_global_stats()
+    try:
+        s = await db.get_global_stats()
+    except Exception as e:
+        await q.answer(f"Error: {e}", show_alert=True)
+        return
+
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%d %b %Y • %H:%M UTC")
 
@@ -399,7 +412,9 @@ async def admin_stats_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT
         "━━━━━━  ❤️  <b>ENGAGEMENT</b>  ━━━━━━\n"
         f"   Total 👍 Likes      :  <b>{s['total_likes']:,}</b>\n"
         f"   Total 👎 Dislikes   :  <b>{s['total_dislikes']:,}</b>\n"
-        f"   Total 👁️ Views      :  <b>{s['total_views']:,}</b>\n\n"
+        f"   Total 👁️ Views      :  <b>{s['total_views']:,}</b>\n"
+        f"   Total 📤 Shares     :  <b>{s['total_shares']:,}</b>\n"
+        f"   Total Interactions  :  <b>{s['total_reactions']:,}</b>\n\n"
         "━━━━━━  📡  <b>CHANNELS</b>  ━━━━━━\n"
         f"   Saved Channels      :  <b>{s['total_saved_channels']:,}</b>\n"
         f"   Posts Sent          :  <b>{s['total_sent_messages']:,}</b>\n\n"

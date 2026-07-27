@@ -447,37 +447,47 @@ async def get_global_stats() -> dict:
     """
     Aggregate bot-wide statistics for the admin /stats command.
     Returns a dict with all key metrics.
+
+    Actual table names (from init_db):
+      posts, buttons, reactions, reaction_counts,
+      sent_messages, user_settings, user_channels,
+      channel_projects, channel_post_reactions, channel_post_user_reactions
     """
     async with aiosqlite.connect(DB_PATH) as db:
-        async def _one(q, *args):
-            async with db.execute(q, args) as cur:
+        async def _one(q):
+            async with db.execute(q) as cur:
                 row = await cur.fetchone()
                 return row[0] if row else 0
 
         # ── Users ──────────────────────────────────────────────
-        total_users   = await _one("SELECT COUNT(DISTINCT user_id) FROM posts")
-        # New today (posts created today acts as proxy; best we can do without user table)
-        today_users   = await _one(
+        total_users = await _one(
+            "SELECT COUNT(DISTINCT user_id) FROM posts"
+        )
+        today_users = await _one(
             "SELECT COUNT(DISTINCT user_id) FROM posts WHERE date(created_at)=date('now')"
         )
 
         # ── Posts ──────────────────────────────────────────────
-        total_posts   = await _one("SELECT COUNT(*) FROM posts")
-        posts_today   = await _one(
+        total_posts = await _one("SELECT COUNT(*) FROM posts")
+        posts_today = await _one(
             "SELECT COUNT(*) FROM posts WHERE date(created_at)=date('now')"
         )
 
-        # ── Buttons ────────────────────────────────────────────
-        total_buttons = await _one("SELECT COUNT(*) FROM post_buttons")
-        url_buttons   = await _one("SELECT COUNT(*) FROM post_buttons WHERE button_type='url'")
-        like_buttons  = await _one("SELECT COUNT(*) FROM post_buttons WHERE button_type='like'")
-        view_buttons  = await _one("SELECT COUNT(*) FROM post_buttons WHERE button_type='views'")
-        share_buttons = await _one("SELECT COUNT(*) FROM post_buttons WHERE button_type='share'")
+        # ── Buttons  (table: buttons) ───────────────────────────
+        total_buttons = await _one("SELECT COUNT(*) FROM buttons")
+        url_buttons   = await _one("SELECT COUNT(*) FROM buttons WHERE button_type='url'")
+        like_buttons  = await _one("SELECT COUNT(*) FROM buttons WHERE button_type='like'")
+        view_buttons  = await _one("SELECT COUNT(*) FROM buttons WHERE button_type='views'")
+        share_buttons = await _one("SELECT COUNT(*) FROM buttons WHERE button_type='share'")
 
-        # ── Reactions / Engagement ─────────────────────────────
-        total_likes    = await _one("SELECT COALESCE(SUM(likes),0)    FROM post_reactions")
-        total_dislikes = await _one("SELECT COALESCE(SUM(dislikes),0) FROM post_reactions")
-        total_views    = await _one("SELECT COALESCE(SUM(views),0)    FROM post_reactions")
+        # ── Engagement  (table: reaction_counts) ───────────────
+        total_likes    = await _one("SELECT COALESCE(SUM(likes),0)    FROM reaction_counts")
+        total_dislikes = await _one("SELECT COALESCE(SUM(dislikes),0) FROM reaction_counts")
+        total_views    = await _one("SELECT COALESCE(SUM(views),0)    FROM reaction_counts")
+        total_shares   = await _one("SELECT COALESCE(SUM(shares),0)   FROM reaction_counts")
+
+        # ── Unique voters  (table: reactions) ──────────────────
+        total_reactions = await _one("SELECT COUNT(*) FROM reactions")
 
         # ── Channel activity ───────────────────────────────────
         total_saved_channels = await _one("SELECT COUNT(*) FROM user_channels")
@@ -497,32 +507,27 @@ async def get_global_stats() -> dict:
             top_user_posts = top_row[1] if top_row else 0
 
         return {
-            # Users
-            "total_users":        total_users,
-            "today_users":        today_users,
-            # Posts
-            "total_posts":        total_posts,
-            "posts_today":        posts_today,
-            # Buttons
-            "total_buttons":      total_buttons,
-            "url_buttons":        url_buttons,
-            "like_buttons":       like_buttons,
-            "view_buttons":       view_buttons,
-            "share_buttons":      share_buttons,
-            # Engagement
-            "total_likes":        total_likes,
-            "total_dislikes":     total_dislikes,
-            "total_views":        total_views,
-            # Channels
+            "total_users":          total_users,
+            "today_users":          today_users,
+            "total_posts":          total_posts,
+            "posts_today":          posts_today,
+            "total_buttons":        total_buttons,
+            "url_buttons":          url_buttons,
+            "like_buttons":         like_buttons,
+            "view_buttons":         view_buttons,
+            "share_buttons":        share_buttons,
+            "total_likes":          total_likes,
+            "total_dislikes":       total_dislikes,
+            "total_views":          total_views,
+            "total_shares":         total_shares,
+            "total_reactions":      total_reactions,
             "total_saved_channels": total_saved_channels,
             "total_sent_messages":  total_sent_messages,
-            # Auto Adder
-            "total_projects":     total_projects,
-            "active_projects":    active_projs,
-            "ch_auto_reacted":    ch_auto_reacted,
-            # Top user
-            "top_user_id":        top_user_id,
-            "top_user_posts":     top_user_posts,
+            "total_projects":       total_projects,
+            "active_projects":      active_projs,
+            "ch_auto_reacted":      ch_auto_reacted,
+            "top_user_id":          top_user_id,
+            "top_user_posts":       top_user_posts,
         }
 
 
