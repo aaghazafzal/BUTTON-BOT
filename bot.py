@@ -358,7 +358,7 @@ async def cmd_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"   🕐  Generated: <code>{now}</code>\n"
-        "   🌐  Platform: <b>Univora</b> (univora.site)\n"
+        "   🌐  Platform: <b>Univora</b> (univora.website)\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
@@ -368,7 +368,7 @@ async def cmd_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("🔄 Refresh", callback_data="admin_stats_refresh",
                                  api_kwargs={"style": "primary"}),
-            InlineKeyboardButton("🌐 Univora", url="https://univora.site",
+            InlineKeyboardButton("🌐 Univora", url="https://univora.website",
                                  api_kwargs={"style": "success"}),
         ]])
     )
@@ -436,7 +436,7 @@ async def admin_stats_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT
         f"   {top_line}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"   🕐  Generated: <code>{now}</code>\n"
-        "   🌐  Platform: <b>Univora</b> (univora.site)\n"
+        "   🌐  Platform: <b>Univora</b> (univora.website)\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
@@ -447,7 +447,7 @@ async def admin_stats_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔄 Refresh", callback_data="admin_stats_refresh",
                                      api_kwargs={"style": "primary"}),
-                InlineKeyboardButton("🌐 Univora", url="https://univora.site",
+                InlineKeyboardButton("🌐 Univora", url="https://univora.website",
                                      api_kwargs={"style": "success"}),
             ]])
         )
@@ -673,7 +673,7 @@ async def on_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         "🤖  About this Bot\n"
         f"      @<code>{uname}</code>\n"
-        f"      Part of <a href='https://univora.site'><b>Univora Platform</b></a> 🌐\n"
+        f"      Part of <a href='https://univora.website'><b>Univora Platform</b></a> 🌐\n"
         f"      Official Channel → <a href='https://t.me/Univora88'>@Univora88</a>\n\n"
 
         "📊  Your Usage\n"

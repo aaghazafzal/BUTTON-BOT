@@ -12,7 +12,7 @@ BOT_TOKEN = "8813750611:AAET-pru66SIHH9oYzRGPMTHvhdfCbUCei0"
 # ─── Univora Platform Branding ───────────────────────────
 FORCE_JOIN_CHANNEL     = "@Univora88"
 FORCE_JOIN_CHANNEL_URL = "https://t.me/Univora88"
-WEBSITE_URL            = "https://univora.site"
+WEBSITE_URL            = "https://univora.website"
 
 # Paths relative to THIS file (works locally + on Render / any OS)
 _BASE = os.path.dirname(os.path.abspath(__file__))

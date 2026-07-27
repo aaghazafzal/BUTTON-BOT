@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-21.6-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://python-telegram-bot.org)
-[![Platform](https://img.shields.io/badge/Univora-Platform-6C3BC9?style=for-the-badge)](https://univora.site)
+[![Platform](https://img.shields.io/badge/Univora-Platform-6C3BC9?style=for-the-badge)](https://univora.website)
 [![Channel](https://img.shields.io/badge/Telegram-@Univora88-26A5E4?style=for-the-badge&logo=telegram)](https://t.me/Univora88)
 
 </div>
@@ -97,7 +97,7 @@ This bot is designed to run on **[Render](https://render.com)** with zero sleep 
    | `BOT_TOKEN` | Your Telegram bot token |
    | `FORCE_JOIN_CHANNEL` | e.g. `@Univora88` |
    | `FORCE_JOIN_CHANNEL_URL` | `https://t.me/Univora88` |
-   | `WEBSITE_URL` | `https://univora.site` |
+   | `WEBSITE_URL` | `https://univora.website` |
    | `START_LOGO_PATH` | `/opt/render/project/src/startmssglogo.jpg` |
    | `RENDER` | `true` ← **Important! Enables keep-alive** |
 
@@ -169,7 +169,7 @@ The `keep_alive.py` module:
 
 ## 🌐 Links
 
-- **Platform:** [univora.site](https://univora.site)
+- **Platform:** [univora.website](https://univora.website)
 - **Channel:** [t.me/Univora88](https://t.me/Univora88)
 - **Repository:** [github.com/aaghaz370/BUTTON_BOT](https://github.com/aaghaz370/BUTTON_BOT)
 
