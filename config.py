@@ -20,10 +20,8 @@ START_LOGO_PATH = os.path.join(_BASE, "startmssglogo.jpg")
 HELP_LOGO_PATH  = os.path.join(_BASE, "helplogo.png")
 
 # ─── Database ────────────────────────────────────────
-DB_PATH = "button_bot.db"
-
-# MongoDB — baad mein set karna (user se lena hai)
-MONGO_URI = None          # e.g. "mongodb+srv://user:pass@cluster.mongodb.net/"
+# MongoDB — set MONGO_URI env var on Render
+MONGO_URI     = "mongodb+srv://buttonbot:aaghaz9431@buttonbot.x2bdflb.mongodb.net/?appName=buttonbot"
 MONGO_DB_NAME = "button_bot"
 
 # ─── Bot Owners / Admins ─────────────────────────────

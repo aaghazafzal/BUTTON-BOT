@@ -1,734 +1,669 @@
 """
 ╔══════════════════════════════════════════╗
-║       DATABASE HANDLER — SQLite Async    ║
-║   (MongoDB-ready — sirf URI set karo)    ║
+║      DATABASE HANDLER — MongoDB Async    ║
+║   Motor (async) driver — No SQLite!      ║
 ╚══════════════════════════════════════════╝
+
+Collections:
+  posts, buttons, reactions, reaction_counts,
+  sent_messages, user_settings, user_channels,
+  channel_projects, channel_post_reactions,
+  channel_post_user_reactions, counters
 """
 
-import aiosqlite
-from datetime import datetime
-from config import DB_PATH
+import os
+import logging
+from datetime import datetime, timezone, timedelta
+
+from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ASCENDING, DESCENDING, ReturnDocument
+
+logger = logging.getLogger(__name__)
+
+# ── Connection ──────────────────────────────────────────────────────────────────
+MONGO_URI = os.environ.get(
+    "MONGO_URI",
+    "mongodb+srv://buttonbot:aaghaz9431@buttonbot.x2bdflb.mongodb.net/?appName=buttonbot"
+)
+MONGO_DB_NAME = os.environ.get("MONGO_DB_NAME", "button_bot")
+
+_client: AsyncIOMotorClient | None = None
+_database = None
 
 
-# ═══════════════════════════════════════════
-#              INITIALIZATION
-# ═══════════════════════════════════════════
+def _db():
+    global _client, _database
+    if _database is None:
+        _client = AsyncIOMotorClient(MONGO_URI, serverSelectionTimeoutMS=10000)
+        _database = _client[MONGO_DB_NAME]
+    return _database
+
+
+# ── Collection accessors ───────────────────────────────────────────────────────
+def _posts():        return _db()["posts"]
+def _btns():         return _db()["buttons"]
+def _rxns():         return _db()["reactions"]          # per-user reaction log
+def _rxc():          return _db()["reaction_counts"]    # aggregate counts per post
+def _sent():         return _db()["sent_messages"]
+def _sett():         return _db()["user_settings"]
+def _uchans():       return _db()["user_channels"]
+def _proj():         return _db()["channel_projects"]
+def _chreact():      return _db()["channel_post_reactions"]
+def _chureact():     return _db()["channel_post_user_reactions"]
+def _ctr():          return _db()["counters"]
+
+
+# ── Auto-increment integer IDs ─────────────────────────────────────────────────
+async def _next_id(name: str) -> int:
+    """Atomic auto-increment counter. Returns next integer ID."""
+    doc = await _ctr().find_one_and_update(
+        {"_id": name},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return doc["seq"]
+
+
+# ── Dict helper: add 'id' alias for '_id' ─────────────────────────────────────
+def _row(doc: dict | None) -> dict | None:
+    """Adds 'id' key equal to '_id' so bot.py code works unchanged."""
+    if doc is None:
+        return None
+    doc["id"] = doc["_id"]
+    return doc
+
+
+def _rows(docs: list[dict]) -> list[dict]:
+    return [_row(d) for d in docs]
+
+
+# ══════════════════════════════════════════════════════════
+#   INITIALIZATION
+# ══════════════════════════════════════════════════════════
 
 async def init_db():
-    """Create all tables if they don't exist."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.executescript("""
-            PRAGMA journal_mode=WAL;
-            PRAGMA foreign_keys=ON;
+    """Create all necessary MongoDB indexes."""
+    await _posts().create_index([("user_id", ASCENDING)])
+    await _posts().create_index([("created_at", ASCENDING)])
 
-            CREATE TABLE IF NOT EXISTS posts (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id       INTEGER NOT NULL,
-                content_type  TEXT    NOT NULL,
-                content       TEXT    NOT NULL,
-                caption       TEXT,
-                parse_mode    TEXT    DEFAULT 'HTML',
-                created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+    await _btns().create_index([("post_id", ASCENDING)])
+    await _btns().create_index([
+        ("post_id", ASCENDING), ("row_num", ASCENDING), ("order_num", ASCENDING)
+    ])
 
-            CREATE TABLE IF NOT EXISTS buttons (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id       INTEGER NOT NULL,
-                button_type   TEXT    NOT NULL DEFAULT 'url',
-                text          TEXT    NOT NULL,
-                url           TEXT,
-                callback_data TEXT,
-                color         TEXT    DEFAULT 'default',
-                row_num       INTEGER DEFAULT 0,
-                order_num     INTEGER DEFAULT 0,
-                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
-            );
+    await _rxns().create_index(
+        [("post_id", ASCENDING), ("user_id", ASCENDING)], unique=True
+    )
 
-            CREATE TABLE IF NOT EXISTS reactions (
-                post_id    INTEGER NOT NULL,
-                user_id    INTEGER NOT NULL,
-                reaction   TEXT    NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (post_id, user_id),
-                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
-            );
+    await _sent().create_index([("post_id", ASCENDING)])
 
-            CREATE TABLE IF NOT EXISTS reaction_counts (
-                post_id   INTEGER PRIMARY KEY,
-                likes     INTEGER DEFAULT 0,
-                dislikes  INTEGER DEFAULT 0,
-                views     INTEGER DEFAULT 0,
-                shares    INTEGER DEFAULT 0,
-                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
-            );
+    await _uchans().create_index([("user_id", ASCENDING)])
+    await _uchans().create_index(
+        [("user_id", ASCENDING), ("channel_username_or_id", ASCENDING)], unique=True
+    )
 
-            CREATE TABLE IF NOT EXISTS sent_messages (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id           INTEGER NOT NULL,
-                chat_id           INTEGER,
-                message_id        INTEGER,
-                inline_message_id TEXT,
-                created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
-            );
+    await _proj().create_index([("user_id", ASCENDING)])
+    await _proj().create_index([("channel_id", ASCENDING)], unique=True)
 
-            CREATE TABLE IF NOT EXISTS user_settings (
-                user_id           INTEGER PRIMARY KEY,
-                default_color     TEXT DEFAULT 'default',
-                created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+    await _chreact().create_index(
+        [("channel_id", ASCENDING), ("message_id", ASCENDING)], unique=True
+    )
+    await _chureact().create_index(
+        [("channel_id", ASCENDING), ("message_id", ASCENDING), ("user_id", ASCENDING)],
+        unique=True
+    )
 
-            CREATE TABLE IF NOT EXISTS user_channels (
-                id                     INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id                INTEGER NOT NULL,
-                channel_username_or_id TEXT NOT NULL,
-                channel_title          TEXT DEFAULT NULL,
-                created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, channel_username_or_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS channel_projects (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id       INTEGER NOT NULL,
-                channel_id    TEXT NOT NULL,
-                channel_title TEXT,
-                buttons_json  TEXT NOT NULL DEFAULT '[]',
-                is_active     INTEGER DEFAULT 1,
-                created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(channel_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS channel_post_reactions (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                channel_id TEXT NOT NULL,
-                message_id INTEGER NOT NULL,
-                likes      INTEGER DEFAULT 0,
-                dislikes   INTEGER DEFAULT 0,
-                views      INTEGER DEFAULT 0,
-                UNIQUE(channel_id, message_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS channel_post_user_reactions (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                channel_id TEXT NOT NULL,
-                message_id INTEGER NOT NULL,
-                user_id    INTEGER NOT NULL,
-                reaction   TEXT NOT NULL,
-                UNIQUE(channel_id, message_id, user_id)
-            );
-        """)
-        # Migration: add channel_title column if it doesn't exist yet (safe for old DBs)
-        try:
-            await db.execute("ALTER TABLE user_channels ADD COLUMN channel_title TEXT DEFAULT NULL")
-            await db.commit()
-        except Exception:
-            pass  # Column already exists — no problem
+    logger.info("database: ✅ MongoDB connected and indexes ensured.")
 
 
-# ═══════════════════════════════════════════
-#              POST OPERATIONS
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#   POST OPERATIONS
+# ══════════════════════════════════════════════════════════
 
-async def create_post(user_id: int, content_type: str, content: str, caption: str = None) -> int:
-    """Create a new post. Returns post_id."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "INSERT INTO posts (user_id, content_type, content, caption) VALUES (?, ?, ?, ?)",
-            (user_id, content_type, content, caption)
-        )
-        post_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO reaction_counts (post_id, likes, dislikes, views, shares) VALUES (?, 0, 0, 0, 0)",
-            (post_id,)
-        )
-        await db.commit()
-        return post_id
+async def create_post(user_id: int, content_type: str, content: str,
+                      caption: str = None) -> int:
+    """Create a new post. Returns integer post_id."""
+    post_id = await _next_id("posts")
+    now = datetime.now(timezone.utc)
+    await _posts().insert_one({
+        "_id":          post_id,
+        "user_id":      user_id,
+        "content_type": content_type,
+        "content":      content,
+        "caption":      caption,
+        "parse_mode":   "HTML",
+        "created_at":   now,
+        "updated_at":   now,
+    })
+    # Create empty reaction counts row
+    await _rxc().update_one(
+        {"_id": post_id},
+        {"$setOnInsert": {"likes": 0, "dislikes": 0, "views": 0, "shares": 0}},
+        upsert=True,
+    )
+    return post_id
 
 
 async def get_post(post_id: int) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM posts WHERE id = ?", (post_id,)) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else None
+    doc = await _posts().find_one({"_id": post_id})
+    return _row(doc)
 
 
 async def get_user_posts(user_id: int, limit: int = 50) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT p.*, rc.likes, rc.dislikes, rc.views FROM posts p "
-            "LEFT JOIN reaction_counts rc ON p.id = rc.post_id "
-            "WHERE p.user_id = ? ORDER BY p.created_at DESC LIMIT ?",
-            (user_id, limit)
-        ) as cur:
-            rows = await cur.fetchall()
-            return [dict(r) for r in rows]
+    cursor = _posts().find({"user_id": user_id}).sort("created_at", DESCENDING).limit(limit)
+    docs = await cursor.to_list(length=limit)
+    # Attach reaction counts
+    result = []
+    for doc in docs:
+        rc = await _rxc().find_one({"_id": doc["_id"]}) or {}
+        doc["likes"]    = rc.get("likes", 0)
+        doc["dislikes"] = rc.get("dislikes", 0)
+        doc["views"]    = rc.get("views", 0)
+        result.append(_row(doc))
+    return result
 
 
 async def count_user_posts(user_id: int) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT COUNT(*) FROM posts WHERE user_id = ?", (user_id,)) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else 0
+    return await _posts().count_documents({"user_id": user_id})
 
 
 async def delete_post(post_id: int, user_id: int) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "DELETE FROM posts WHERE id = ? AND user_id = ?", (post_id, user_id)
-        )
-        await db.commit()
-        return cursor.rowcount > 0
+    result = await _posts().delete_one({"_id": post_id, "user_id": user_id})
+    if result.deleted_count > 0:
+        # Cascade delete
+        await _btns().delete_many({"post_id": post_id})
+        await _rxns().delete_many({"post_id": post_id})
+        await _rxc().delete_one({"_id": post_id})
+        await _sent().delete_many({"post_id": post_id})
+        return True
+    return False
 
 
 async def update_post_content(post_id: int, content: str, caption: str = None):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE posts SET content = ?, caption = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (content, caption, post_id)
-        )
-        await db.commit()
+    await _posts().update_one(
+        {"_id": post_id},
+        {"$set": {"content": content, "caption": caption,
+                  "updated_at": datetime.now(timezone.utc)}}
+    )
 
 
-# ═══════════════════════════════════════════
-#              BUTTON OPERATIONS
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#   BUTTON OPERATIONS
+# ══════════════════════════════════════════════════════════
 
 async def add_button(post_id: int, button_type: str, text: str,
                      url: str = None, callback_data: str = None,
-                     color: str = 'default', row_num: int = 0, order_num: int = 0) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            """INSERT INTO buttons
-               (post_id, button_type, text, url, callback_data, color, row_num, order_num)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (post_id, button_type, text, url, callback_data, color, row_num, order_num)
-        )
-        await db.commit()
-        return cursor.lastrowid
+                     color: str = "default",
+                     row_num: int = 0, order_num: int = 0) -> int:
+    btn_id = await _next_id("buttons")
+    await _btns().insert_one({
+        "_id":           btn_id,
+        "post_id":       post_id,
+        "button_type":   button_type,
+        "text":          text,
+        "url":           url,
+        "callback_data": callback_data,
+        "color":         color,
+        "row_num":       row_num,
+        "order_num":     order_num,
+    })
+    return btn_id
 
 
 async def get_post_buttons(post_id: int) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM buttons WHERE post_id = ? ORDER BY row_num, order_num",
-            (post_id,)
-        ) as cur:
-            rows = await cur.fetchall()
-            return [dict(r) for r in rows]
+    cursor = _btns().find({"post_id": post_id}).sort(
+        [("row_num", ASCENDING), ("order_num", ASCENDING)]
+    )
+    docs = await cursor.to_list(length=None)
+    return _rows(docs)
 
 
 async def delete_button(button_id: int) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute("DELETE FROM buttons WHERE id = ?", (button_id,))
-        await db.commit()
-        return cursor.rowcount > 0
+    result = await _btns().delete_one({"_id": button_id})
+    return result.deleted_count > 0
 
 
 async def clear_post_buttons(post_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM buttons WHERE post_id = ?", (post_id,))
-        await db.commit()
+    await _btns().delete_many({"post_id": post_id})
 
 
 async def has_reaction_buttons(post_id: int) -> dict:
-    """Returns {'like': bool, 'dislike': bool, 'views': bool}"""
     buttons = await get_post_buttons(post_id)
-    types = {b['button_type'] for b in buttons}
+    types = {b["button_type"] for b in buttons}
     return {
-        'like': 'like' in types,
-        'dislike': 'dislike' in types,
-        'views': 'views' in types,
-        'share': 'share' in types,
+        "like":    "like"    in types,
+        "dislike": "dislike" in types,
+        "views":   "views"   in types,
+        "share":   "share"   in types,
     }
 
 
 async def get_next_row_for_post(post_id: int) -> int:
     """Get next available row number for a post."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT COALESCE(MAX(row_num), -1) + 1 FROM buttons WHERE post_id = ?",
-            (post_id,)
-        ) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else 0
+    pipeline = [
+        {"$match": {"post_id": post_id}},
+        {"$group": {"_id": None, "max_row": {"$max": "$row_num"}}},
+    ]
+    result = await _btns().aggregate(pipeline).to_list(length=1)
+    if result:
+        return result[0]["max_row"] + 1
+    return 0
 
 
 async def get_button_count_in_row(post_id: int, row_num: int) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT COUNT(*) FROM buttons WHERE post_id = ? AND row_num = ?",
-            (post_id, row_num)
-        ) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else 0
+    return await _btns().count_documents({"post_id": post_id, "row_num": row_num})
 
 
-# ═══════════════════════════════════════════
-#            REACTION OPERATIONS
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#   REACTION OPERATIONS  (post reactions)
+# ══════════════════════════════════════════════════════════
 
 async def handle_reaction(post_id: int, user_id: int, reaction: str) -> tuple[int, int, str]:
     """
-    Toggle like/dislike.
+    Toggle like/dislike on a post.
     Returns (new_likes, new_dislikes, action)
     action: 'added' | 'removed' | 'changed'
     """
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    existing = await _rxns().find_one({"post_id": post_id, "user_id": user_id})
 
-        async with db.execute(
-            "SELECT reaction FROM reactions WHERE post_id = ? AND user_id = ?",
-            (post_id, user_id)
-        ) as cur:
-            existing = await cur.fetchone()
-
-        if existing:
-            if existing['reaction'] == reaction:
-                # Same reaction — remove (toggle off)
-                await db.execute(
-                    "DELETE FROM reactions WHERE post_id = ? AND user_id = ?",
-                    (post_id, user_id)
-                )
-                action = 'removed'
-            else:
-                # Different — switch reaction
-                await db.execute(
-                    "UPDATE reactions SET reaction = ? WHERE post_id = ? AND user_id = ?",
-                    (reaction, post_id, user_id)
-                )
-                action = 'changed'
-        else:
-            await db.execute(
-                "INSERT INTO reactions (post_id, user_id, reaction) VALUES (?, ?, ?)",
-                (post_id, user_id, reaction)
+    if existing:
+        old = existing["reaction"]
+        if old == reaction:
+            # Toggle off
+            await _rxns().delete_one({"post_id": post_id, "user_id": user_id})
+            dec_field = "likes" if reaction == "like" else "dislikes"
+            await _rxc().update_one(
+                {"_id": post_id},
+                {"$inc": {dec_field: -1}},
+                upsert=True
             )
-            action = 'added'
-
-        await db.commit()
-
-        # Recalculate counts
-        async with db.execute(
-            "SELECT reaction, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY reaction",
-            (post_id,)
-        ) as cur:
-            counts = {r['reaction']: r['cnt'] for r in await cur.fetchall()}
-
-        likes = counts.get('like', 0)
-        dislikes = counts.get('dislike', 0)
-
-        await db.execute(
-            "UPDATE reaction_counts SET likes = ?, dislikes = ? WHERE post_id = ?",
-            (likes, dislikes, post_id)
+            action = "removed"
+        else:
+            # Switch
+            await _rxns().update_one(
+                {"post_id": post_id, "user_id": user_id},
+                {"$set": {"reaction": reaction}}
+            )
+            old_field = "likes" if old == "like" else "dislikes"
+            new_field = "likes" if reaction == "like" else "dislikes"
+            await _rxc().update_one(
+                {"_id": post_id},
+                {"$inc": {old_field: -1, new_field: 1}},
+                upsert=True
+            )
+            action = "changed"
+    else:
+        # New reaction
+        await _rxns().insert_one({
+            "post_id":    post_id,
+            "user_id":    user_id,
+            "reaction":   reaction,
+            "created_at": datetime.now(timezone.utc),
+        })
+        inc_field = "likes" if reaction == "like" else "dislikes"
+        await _rxc().update_one(
+            {"_id": post_id},
+            {"$inc": {inc_field: 1}},
+            upsert=True
         )
-        await db.commit()
+        action = "added"
 
-        return likes, dislikes, action
+    counts = await _rxc().find_one({"_id": post_id}) or {}
+    likes    = max(0, counts.get("likes", 0))
+    dislikes = max(0, counts.get("dislikes", 0))
+    return likes, dislikes, action
 
 
 async def get_user_reaction(post_id: int, user_id: int) -> str | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT reaction FROM reactions WHERE post_id = ? AND user_id = ?",
-            (post_id, user_id)
-        ) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else None
+    doc = await _rxns().find_one({"post_id": post_id, "user_id": user_id})
+    return doc["reaction"] if doc else None
 
 
 async def increment_views(post_id: int) -> int:
     """Increment view count and return new count."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE reaction_counts SET views = views + 1 WHERE post_id = ?",
-            (post_id,)
-        )
-        await db.commit()
-        async with db.execute(
-            "SELECT views FROM reaction_counts WHERE post_id = ?", (post_id,)
-        ) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else 0
+    doc = await _rxc().find_one_and_update(
+        {"_id": post_id},
+        {"$inc": {"views": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return doc.get("views", 0)
 
 
 async def get_reaction_counts(post_id: int) -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT likes, dislikes, views, shares FROM reaction_counts WHERE post_id = ?",
-            (post_id,)
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else {'likes': 0, 'dislikes': 0, 'views': 0, 'shares': 0}
+    doc = await _rxc().find_one({"_id": post_id})
+    if not doc:
+        return {"likes": 0, "dislikes": 0, "views": 0, "shares": 0}
+    return {
+        "likes":    doc.get("likes", 0),
+        "dislikes": doc.get("dislikes", 0),
+        "views":    doc.get("views", 0),
+        "shares":   doc.get("shares", 0),
+    }
 
 
-# ═══════════════════════════════════════════
-#         SENT MESSAGE TRACKING
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#   SENT MESSAGE TRACKING
+# ══════════════════════════════════════════════════════════
 
 async def save_sent_message(post_id: int, chat_id: int = None,
                              message_id: int = None, inline_message_id: str = None):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO sent_messages (post_id, chat_id, message_id, inline_message_id) VALUES (?, ?, ?, ?)",
-            (post_id, chat_id, message_id, inline_message_id)
-        )
-        await db.commit()
+    sent_id = await _next_id("sent_messages")
+    await _sent().insert_one({
+        "_id":               sent_id,
+        "post_id":           post_id,
+        "chat_id":           chat_id,
+        "message_id":        message_id,
+        "inline_message_id": inline_message_id,
+        "created_at":        datetime.now(timezone.utc),
+    })
 
 
 async def get_sent_messages(post_id: int) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM sent_messages WHERE post_id = ?", (post_id,)
-        ) as cur:
-            rows = await cur.fetchall()
-            return [dict(r) for r in rows]
+    cursor = _sent().find({"post_id": post_id})
+    docs = await cursor.to_list(length=None)
+    return _rows(docs)
 
-# ═══════════════════════════════════════════
-#             USER CHANNELS
-# ═══════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════
+#   USER CHANNELS
+# ══════════════════════════════════════════════════════════
 
 async def get_user_channels(user_id: int) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM user_channels WHERE user_id = ? ORDER BY created_at ASC", (user_id,)
-        ) as cur:
-            rows = await cur.fetchall()
-            return [dict(r) for r in rows]
+    cursor = _uchans().find({"user_id": user_id}).sort("created_at", ASCENDING)
+    docs = await cursor.to_list(length=None)
+    return _rows(docs)
+
 
 async def add_user_channel(user_id: int, channel: str, title: str = None) -> bool:
-    """Adds a channel with optional display title. Returns True if added."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        try:
-            await db.execute(
-                "INSERT INTO user_channels (user_id, channel_username_or_id, channel_title) VALUES (?, ?, ?)",
-                (user_id, channel, title)
-            )
-            await db.commit()
-            return True
-        except aiosqlite.IntegrityError:
-            return False
+    """Adds a channel. Returns True if added, False if already exists."""
+    try:
+        ch_id = await _next_id("user_channels")
+        await _uchans().insert_one({
+            "_id":                   ch_id,
+            "user_id":               user_id,
+            "channel_username_or_id": channel,
+            "channel_title":         title,
+            "created_at":            datetime.now(timezone.utc),
+        })
+        return True
+    except Exception:
+        return False
+
 
 async def remove_user_channel(user_id: int, channel_id: int) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "DELETE FROM user_channels WHERE user_id = ? AND id = ?",
-            (user_id, channel_id)
-        )
-        await db.commit()
-        return cursor.rowcount > 0
+    result = await _uchans().delete_one({"_id": channel_id, "user_id": user_id})
+    return result.deleted_count > 0
+
 
 async def count_user_channels(user_id: int) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT COUNT(*) FROM user_channels WHERE user_id = ?", (user_id,)) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else 0
+    return await _uchans().count_documents({"user_id": user_id})
+
 
 async def update_channel_title(row_id: int, title: str) -> None:
-    """Update the display title for a saved channel row."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE user_channels SET channel_title = ? WHERE id = ?",
-            (title, row_id)
-        )
-        await db.commit()
+    await _uchans().update_one(
+        {"_id": row_id},
+        {"$set": {"channel_title": title}}
+    )
 
 
-# ═══════════════════════════════════════════
-#       GLOBAL BOT STATISTICS  (Admin /stats)
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#   GLOBAL BOT STATISTICS  (Admin /stats)
+# ══════════════════════════════════════════════════════════
 
 async def get_global_stats() -> dict:
-    """
-    Aggregate bot-wide statistics for the admin /stats command.
-    Returns a dict with all key metrics.
+    """Aggregate bot-wide statistics for /stats command."""
+    from datetime import date
 
-    Actual table names (from init_db):
-      posts, buttons, reactions, reaction_counts,
-      sent_messages, user_settings, user_channels,
-      channel_projects, channel_post_reactions, channel_post_user_reactions
-    """
-    async with aiosqlite.connect(DB_PATH) as db:
-        async def _one(q):
-            async with db.execute(q) as cur:
-                row = await cur.fetchone()
-                return row[0] if row else 0
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
 
-        # ── Users ──────────────────────────────────────────────
-        total_users = await _one(
-            "SELECT COUNT(DISTINCT user_id) FROM posts"
-        )
-        today_users = await _one(
-            "SELECT COUNT(DISTINCT user_id) FROM posts WHERE date(created_at)=date('now')"
-        )
+    # ── Users ────────────────────────────────────────────────
+    total_users = len(await _posts().distinct("user_id"))
+    today_users = len(await _posts().distinct("user_id", {"created_at": {"$gte": today_start}}))
 
-        # ── Posts ──────────────────────────────────────────────
-        total_posts = await _one("SELECT COUNT(*) FROM posts")
-        posts_today = await _one(
-            "SELECT COUNT(*) FROM posts WHERE date(created_at)=date('now')"
-        )
+    # ── Posts ────────────────────────────────────────────────
+    total_posts = await _posts().count_documents({})
+    posts_today = await _posts().count_documents({"created_at": {"$gte": today_start}})
 
-        # ── Buttons  (table: buttons) ───────────────────────────
-        total_buttons = await _one("SELECT COUNT(*) FROM buttons")
-        url_buttons   = await _one("SELECT COUNT(*) FROM buttons WHERE button_type='url'")
-        like_buttons  = await _one("SELECT COUNT(*) FROM buttons WHERE button_type='like'")
-        view_buttons  = await _one("SELECT COUNT(*) FROM buttons WHERE button_type='views'")
-        share_buttons = await _one("SELECT COUNT(*) FROM buttons WHERE button_type='share'")
+    # ── Buttons ──────────────────────────────────────────────
+    total_buttons = await _btns().count_documents({})
+    url_buttons   = await _btns().count_documents({"button_type": "url"})
+    like_buttons  = await _btns().count_documents({"button_type": "like"})
+    view_buttons  = await _btns().count_documents({"button_type": "views"})
+    share_buttons = await _btns().count_documents({"button_type": "share"})
 
-        # ── Engagement  (table: reaction_counts) ───────────────
-        total_likes    = await _one("SELECT COALESCE(SUM(likes),0)    FROM reaction_counts")
-        total_dislikes = await _one("SELECT COALESCE(SUM(dislikes),0) FROM reaction_counts")
-        total_views    = await _one("SELECT COALESCE(SUM(views),0)    FROM reaction_counts")
-        total_shares   = await _one("SELECT COALESCE(SUM(shares),0)   FROM reaction_counts")
+    # ── Engagement (reaction_counts aggregate) ───────────────
+    rxc_pipeline = [
+        {"$group": {
+            "_id":      None,
+            "likes":    {"$sum": "$likes"},
+            "dislikes": {"$sum": "$dislikes"},
+            "views":    {"$sum": "$views"},
+            "shares":   {"$sum": "$shares"},
+        }}
+    ]
+    rxc_result = await _rxc().aggregate(rxc_pipeline).to_list(length=1)
+    rxc = rxc_result[0] if rxc_result else {}
+    total_likes    = rxc.get("likes", 0)
+    total_dislikes = rxc.get("dislikes", 0)
+    total_views    = rxc.get("views", 0)
+    total_shares   = rxc.get("shares", 0)
+    total_reactions = await _rxns().count_documents({})
 
-        # ── Unique voters  (table: reactions) ──────────────────
-        total_reactions = await _one("SELECT COUNT(*) FROM reactions")
+    # ── Channels ─────────────────────────────────────────────
+    total_saved_channels = await _uchans().count_documents({})
+    total_sent_messages  = await _sent().count_documents({})
 
-        # ── Channel activity ───────────────────────────────────
-        total_saved_channels = await _one("SELECT COUNT(*) FROM user_channels")
-        total_sent_messages  = await _one("SELECT COUNT(*) FROM sent_messages")
+    # ── Auto Button Adder ────────────────────────────────────
+    total_projects  = await _proj().count_documents({})
+    active_projects = await _proj().count_documents({"is_active": True})
+    ch_auto_reacted = await _chreact().count_documents({})
 
-        # ── Auto Button Adder ──────────────────────────────────
-        total_projects = await _one("SELECT COUNT(*) FROM channel_projects")
-        active_projs   = await _one("SELECT COUNT(*) FROM channel_projects WHERE is_active=1")
-        ch_auto_reacted= await _one("SELECT COUNT(*) FROM channel_post_reactions")
+    # ── Top user ─────────────────────────────────────────────
+    top_pipeline = [
+        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+        {"$sort":  {"count": -1}},
+        {"$limit": 1},
+    ]
+    top_result = await _posts().aggregate(top_pipeline).to_list(length=1)
+    top_user_id    = top_result[0]["_id"]    if top_result else None
+    top_user_posts = top_result[0]["count"]  if top_result else 0
 
-        # ── Top user (most posts) ──────────────────────────────
-        async with db.execute(
-            "SELECT user_id, COUNT(*) as c FROM posts GROUP BY user_id ORDER BY c DESC LIMIT 1"
-        ) as cur:
-            top_row = await cur.fetchone()
-            top_user_id    = top_row[0] if top_row else None
-            top_user_posts = top_row[1] if top_row else 0
-
-        return {
-            "total_users":          total_users,
-            "today_users":          today_users,
-            "total_posts":          total_posts,
-            "posts_today":          posts_today,
-            "total_buttons":        total_buttons,
-            "url_buttons":          url_buttons,
-            "like_buttons":         like_buttons,
-            "view_buttons":         view_buttons,
-            "share_buttons":        share_buttons,
-            "total_likes":          total_likes,
-            "total_dislikes":       total_dislikes,
-            "total_views":          total_views,
-            "total_shares":         total_shares,
-            "total_reactions":      total_reactions,
-            "total_saved_channels": total_saved_channels,
-            "total_sent_messages":  total_sent_messages,
-            "total_projects":       total_projects,
-            "active_projects":      active_projs,
-            "ch_auto_reacted":      ch_auto_reacted,
-            "top_user_id":          top_user_id,
-            "top_user_posts":       top_user_posts,
-        }
+    return {
+        "total_users":          total_users,
+        "today_users":          today_users,
+        "total_posts":          total_posts,
+        "posts_today":          posts_today,
+        "total_buttons":        total_buttons,
+        "url_buttons":          url_buttons,
+        "like_buttons":         like_buttons,
+        "view_buttons":         view_buttons,
+        "share_buttons":        share_buttons,
+        "total_likes":          total_likes,
+        "total_dislikes":       total_dislikes,
+        "total_views":          total_views,
+        "total_shares":         total_shares,
+        "total_reactions":      total_reactions,
+        "total_saved_channels": total_saved_channels,
+        "total_sent_messages":  total_sent_messages,
+        "total_projects":       total_projects,
+        "active_projects":      active_projects,
+        "ch_auto_reacted":      ch_auto_reacted,
+        "top_user_id":          top_user_id,
+        "top_user_posts":       top_user_posts,
+    }
 
 
-# ═══════════════════════════════════════════
-#           CHANNEL PROJECTS (Auto Button Adder)
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#   CHANNEL PROJECTS  (Auto Button Adder)
+# ══════════════════════════════════════════════════════════
 
 async def save_channel_project(user_id: int, channel_id: str,
                                 channel_title: str, buttons_json: str) -> int:
-    """Insert or replace a project for a channel. Returns the row id."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            """INSERT INTO channel_projects (user_id, channel_id, channel_title, buttons_json)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(channel_id) DO UPDATE SET
-                 user_id=excluded.user_id,
-                 channel_title=excluded.channel_title,
-                 buttons_json=excluded.buttons_json,
-                 is_active=1,
-                 created_at=CURRENT_TIMESTAMP""",
-            (user_id, channel_id, channel_title, buttons_json)
+    """Upsert a project for a channel. Returns the project id."""
+    now = datetime.now(timezone.utc)
+    existing = await _proj().find_one({"channel_id": channel_id})
+
+    if existing:
+        await _proj().update_one(
+            {"channel_id": channel_id},
+            {"$set": {
+                "user_id":       user_id,
+                "channel_title": channel_title,
+                "buttons_json":  buttons_json,
+                "is_active":     True,
+                "created_at":    now,
+            }}
         )
-        await db.commit()
-        return cursor.lastrowid
+        return existing["_id"]
+    else:
+        proj_id = await _next_id("channel_projects")
+        await _proj().insert_one({
+            "_id":           proj_id,
+            "user_id":       user_id,
+            "channel_id":    channel_id,
+            "channel_title": channel_title,
+            "buttons_json":  buttons_json,
+            "is_active":     True,
+            "created_at":    now,
+        })
+        return proj_id
 
 
 async def get_channel_project(channel_id: str) -> dict | None:
-    """Get the active project for a channel (any user)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM channel_projects WHERE channel_id = ? AND is_active = 1",
-            (channel_id,)
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else None
+    """Get the active project for a channel."""
+    doc = await _proj().find_one({"channel_id": channel_id, "is_active": True})
+    return _row(doc)
 
 
 async def get_user_projects(user_id: int) -> list[dict]:
-    """Get all projects owned by the user."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM channel_projects WHERE user_id = ? ORDER BY created_at DESC",
-            (user_id,)
-        ) as cur:
-            rows = await cur.fetchall()
-            return [dict(r) for r in rows]
+    cursor = _proj().find({"user_id": user_id}).sort("created_at", DESCENDING)
+    docs = await cursor.to_list(length=None)
+    return _rows(docs)
 
 
 async def delete_channel_project(user_id: int, project_id: int) -> bool:
-    """Delete a project owned by the user."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "DELETE FROM channel_projects WHERE id = ? AND user_id = ?",
-            (project_id, user_id)
-        )
-        await db.commit()
-        return cursor.rowcount > 0
+    result = await _proj().delete_one({"_id": project_id, "user_id": user_id})
+    return result.deleted_count > 0
 
 
 async def toggle_channel_project(user_id: int, project_id: int, active: bool) -> None:
-    """Enable or disable a project."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE channel_projects SET is_active = ? WHERE id = ? AND user_id = ?",
-            (1 if active else 0, project_id, user_id)
-        )
-        await db.commit()
+    await _proj().update_one(
+        {"_id": project_id, "user_id": user_id},
+        {"$set": {"is_active": active}}
+    )
 
 
-# ═══════════════════════════════════════════
-#      CHANNEL POST REACTIONS  (Auto Button Adder)
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#   CHANNEL POST REACTIONS  (Auto Button Adder)
+# ══════════════════════════════════════════════════════════
 
 async def get_or_create_channel_reactions(channel_id: str, message_id: int) -> dict:
-    """Return reaction counts for a channel post, creating the row if needed."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await db.execute(
-            "INSERT OR IGNORE INTO channel_post_reactions (channel_id, message_id) VALUES (?, ?)",
-            (channel_id, message_id)
-        )
-        await db.commit()
-        async with db.execute(
-            "SELECT likes, dislikes, views FROM channel_post_reactions WHERE channel_id=? AND message_id=?",
-            (channel_id, message_id)
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else {"likes": 0, "dislikes": 0, "views": 0}
+    """Return reaction counts for a channel post, creating if needed."""
+    doc = await _chreact().find_one_and_update(
+        {"channel_id": channel_id, "message_id": message_id},
+        {"$setOnInsert": {"likes": 0, "dislikes": 0, "views": 0}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return {"likes": doc.get("likes", 0), "dislikes": doc.get("dislikes", 0), "views": doc.get("views", 0)}
 
 
 async def get_channel_user_reaction(channel_id: str, message_id: int, user_id: int) -> str | None:
-    """Return the user's existing reaction ('like'|'dislike'|'views') or None."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT reaction FROM channel_post_user_reactions WHERE channel_id=? AND message_id=? AND user_id=?",
-            (channel_id, message_id, user_id)
-        ) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else None
+    doc = await _chureact().find_one({
+        "channel_id": channel_id, "message_id": message_id, "user_id": user_id
+    })
+    return doc["reaction"] if doc else None
 
 
 async def set_channel_user_reaction(channel_id: str, message_id: int,
                                      user_id: int, reaction: str) -> dict:
     """
-    Toggle like/dislike for a channel post. Returns new counts dict.
-    - If user already reacted with SAME reaction → remove it (toggle off)
-    - If user reacted with DIFFERENT reaction → switch
-    - If no prior reaction → add it
-    Only like/dislike are togglable; views are additive (one per user).
+    Toggle like/dislike for a channel post.
+    Returns updated counts dict.
     """
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        # Ensure reaction row exists
-        await db.execute(
-            "INSERT OR IGNORE INTO channel_post_reactions (channel_id, message_id) VALUES (?, ?)",
-            (channel_id, message_id)
+    # Ensure reaction counts doc exists
+    await _chreact().update_one(
+        {"channel_id": channel_id, "message_id": message_id},
+        {"$setOnInsert": {"likes": 0, "dislikes": 0, "views": 0}},
+        upsert=True,
+    )
+
+    existing_doc = await _chureact().find_one({
+        "channel_id": channel_id, "message_id": message_id, "user_id": user_id
+    })
+    existing = existing_doc["reaction"] if existing_doc else None
+
+    if existing == reaction:
+        # Toggle off
+        await _chureact().delete_one({
+            "channel_id": channel_id, "message_id": message_id, "user_id": user_id
+        })
+        col = "likes" if reaction == "like" else "dislikes"
+        await _chreact().update_one(
+            {"channel_id": channel_id, "message_id": message_id},
+            {"$inc": {col: -1}}
         )
-        existing = None
-        async with db.execute(
-            "SELECT reaction FROM channel_post_user_reactions WHERE channel_id=? AND message_id=? AND user_id=?",
-            (channel_id, message_id, user_id)
-        ) as cur:
-            row = await cur.fetchone()
-            existing = row[0] if row else None
+    elif existing:
+        # Switch reaction
+        await _chureact().update_one(
+            {"channel_id": channel_id, "message_id": message_id, "user_id": user_id},
+            {"$set": {"reaction": reaction}}
+        )
+        old_col = "likes" if existing == "like" else "dislikes"
+        new_col = "likes" if reaction == "like" else "dislikes"
+        await _chreact().update_one(
+            {"channel_id": channel_id, "message_id": message_id},
+            {"$inc": {old_col: -1, new_col: 1}}
+        )
+    else:
+        # New reaction
+        try:
+            await _chureact().insert_one({
+                "channel_id": channel_id,
+                "message_id": message_id,
+                "user_id":    user_id,
+                "reaction":   reaction,
+            })
+        except Exception:
+            pass  # Duplicate — race condition, ignore
+        col = "likes" if reaction == "like" else "dislikes"
+        await _chreact().update_one(
+            {"channel_id": channel_id, "message_id": message_id},
+            {"$inc": {col: 1}}
+        )
 
-        if existing == reaction:
-            # Toggle off
-            await db.execute(
-                "DELETE FROM channel_post_user_reactions WHERE channel_id=? AND message_id=? AND user_id=?",
-                (channel_id, message_id, user_id)
-            )
-            col = "likes" if reaction == "like" else "dislikes"
-            await db.execute(
-                f"UPDATE channel_post_reactions SET {col} = MAX(0, {col} - 1) WHERE channel_id=? AND message_id=?",
-                (channel_id, message_id)
-            )
-        elif existing:
-            # Switch reaction
-            await db.execute(
-                "UPDATE channel_post_user_reactions SET reaction=? WHERE channel_id=? AND message_id=? AND user_id=?",
-                (reaction, channel_id, message_id, user_id)
-            )
-            old_col = "likes" if existing == "like" else "dislikes"
-            new_col = "likes" if reaction == "like" else "dislikes"
-            await db.execute(
-                f"UPDATE channel_post_reactions SET {old_col}=MAX(0,{old_col}-1), {new_col}={new_col}+1 WHERE channel_id=? AND message_id=?",
-                (channel_id, message_id)
-            )
-        else:
-            # New reaction
-            await db.execute(
-                "INSERT INTO channel_post_user_reactions (channel_id, message_id, user_id, reaction) VALUES (?,?,?,?)",
-                (channel_id, message_id, user_id, reaction)
-            )
-            col = "likes" if reaction == "like" else "dislikes"
-            await db.execute(
-                f"UPDATE channel_post_reactions SET {col}={col}+1 WHERE channel_id=? AND message_id=?",
-                (channel_id, message_id)
-            )
-
-        await db.commit()
-        async with db.execute(
-            "SELECT likes, dislikes, views FROM channel_post_reactions WHERE channel_id=? AND message_id=?",
-            (channel_id, message_id)
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else {"likes": 0, "dislikes": 0, "views": 0}
+    doc = await _chreact().find_one({"channel_id": channel_id, "message_id": message_id})
+    return {"likes": doc.get("likes", 0), "dislikes": doc.get("dislikes", 0), "views": doc.get("views", 0)}
 
 
 async def add_channel_view(channel_id: str, message_id: int, user_id: int) -> dict:
-    """
-    Increment views for a channel post (one per user).
-    Returns updated counts.
-    """
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await db.execute(
-            "INSERT OR IGNORE INTO channel_post_reactions (channel_id, message_id) VALUES (?, ?)",
-            (channel_id, message_id)
+    """Increment views for a channel post (one per user). Returns updated counts."""
+    # Ensure counts doc exists
+    await _chreact().update_one(
+        {"channel_id": channel_id, "message_id": message_id},
+        {"$setOnInsert": {"likes": 0, "dislikes": 0, "views": 0}},
+        upsert=True,
+    )
+    # Only count unique views
+    try:
+        await _chureact().insert_one({
+            "channel_id": channel_id,
+            "message_id": message_id,
+            "user_id":    user_id,
+            "reaction":   "views",
+        })
+        # Successfully inserted → first view
+        doc = await _chreact().find_one_and_update(
+            {"channel_id": channel_id, "message_id": message_id},
+            {"$inc": {"views": 1}},
+            return_document=ReturnDocument.AFTER,
         )
-        # Only count if not already viewed
-        async with db.execute(
-            "SELECT 1 FROM channel_post_user_reactions WHERE channel_id=? AND message_id=? AND user_id=? AND reaction='views'",
-            (channel_id, message_id, user_id)
-        ) as cur:
-            already = await cur.fetchone()
-        if not already:
-            await db.execute(
-                "INSERT OR IGNORE INTO channel_post_user_reactions (channel_id, message_id, user_id, reaction) VALUES (?,?,?,'views')",
-                (channel_id, message_id, user_id)
-            )
-            await db.execute(
-                "UPDATE channel_post_reactions SET views=views+1 WHERE channel_id=? AND message_id=?",
-                (channel_id, message_id)
-            )
-        await db.commit()
-        async with db.execute(
-            "SELECT likes, dislikes, views FROM channel_post_reactions WHERE channel_id=? AND message_id=?",
-            (channel_id, message_id)
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else {"likes": 0, "dislikes": 0, "views": 0}
+    except Exception:
+        # Already viewed — just fetch current counts
+        doc = await _chreact().find_one({"channel_id": channel_id, "message_id": message_id})
+
+    return {"likes": doc.get("likes", 0), "dislikes": doc.get("dislikes", 0), "views": doc.get("views", 0)}
