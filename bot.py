@@ -31,6 +31,7 @@ from config import (
     MAX_POSTS_PER_USER, MAX_BUTTONS_PER_POST,
     FORCE_JOIN_CHANNEL, FORCE_JOIN_CHANNEL_URL, WEBSITE_URL,
     START_LOGO_PATH, FORCE_JOIN_TEXT, HELP_LOGO_PATH,
+    OWNER_IDS,
 )
 from utils.keyboards import (
     # Reply keyboards
@@ -256,6 +257,177 @@ async def welcome_help_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
             reply_markup=help_main_inline_kb()
         )
+
+
+# ════════════════════════════════════════════════════════
+#   ADMIN-ONLY /stats  — Full Bot Statistics Card
+# ════════════════════════════════════════════════════════
+
+async def cmd_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    /stats command — ADMIN ONLY.
+    Shows a beautiful premium card with complete bot analytics.
+    """
+    user_id = update.effective_user.id
+
+    # ── Admin gate ────────────────────────────────────────────
+    if OWNER_IDS and user_id not in OWNER_IDS:
+        await update.message.reply_text(
+            "🔒 <b>Access Denied</b>\n\n"
+            "This command is restricted to bot administrators only.",
+            parse_mode=ParseMode.HTML
+        )
+        return
+
+    # If OWNER_IDS is empty → only the person running the command can see it
+    # (fallback for fresh installs where ADMIN_IDS env isn't set)
+
+    await update.message.reply_text("⏳ Fetching stats…")
+
+    s = await db.get_global_stats()
+
+    # ── Uptime indicator ──────────────────────────────────────
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).strftime("%d %b %Y • %H:%M UTC")
+
+    # ── Top user mention ──────────────────────────────────────
+    if s["top_user_id"]:
+        try:
+            chat = await ctx.bot.get_chat(s["top_user_id"])
+            top_name = (chat.username and f"@{chat.username}") or chat.full_name or str(s["top_user_id"])
+        except Exception:
+            top_name = f"User #{s['top_user_id']}"
+        top_line = f"👑 <b>Top Creator:</b>  {top_name}  ({s['top_user_posts']} posts)"
+    else:
+        top_line = "👑 <b>Top Creator:</b>  —"
+
+    card = (
+        "╔══════════════════════════════════════╗\n"
+        "║   📊  <b>UNIVORA BUTTON BOT — STATS</b>   ║\n"
+        "╚══════════════════════════════════════╝\n\n"
+
+        "━━━━━━  👥  <b>USERS</b>  ━━━━━━\n"
+        f"   Total Bot Users     :  <b>{s['total_users']:,}</b>\n"
+        f"   Active Today        :  <b>{s['today_users']:,}</b>\n\n"
+
+        "━━━━━━  📝  <b>POSTS</b>  ━━━━━━\n"
+        f"   Total Posts Created :  <b>{s['total_posts']:,}</b>\n"
+        f"   Created Today       :  <b>{s['posts_today']:,}</b>\n\n"
+
+        "━━━━━━  🔘  <b>BUTTONS</b>  ━━━━━━\n"
+        f"   Total Buttons       :  <b>{s['total_buttons']:,}</b>\n"
+        f"   ├ 🔗 URL Buttons    :  <b>{s['url_buttons']:,}</b>\n"
+        f"   ├ 👍 Like Buttons   :  <b>{s['like_buttons']:,}</b>\n"
+        f"   ├ 👁️ View Buttons   :  <b>{s['view_buttons']:,}</b>\n"
+        f"   └ 📤 Share Buttons  :  <b>{s['share_buttons']:,}</b>\n\n"
+
+        "━━━━━━  ❤️  <b>ENGAGEMENT</b>  ━━━━━━\n"
+        f"   Total 👍 Likes      :  <b>{s['total_likes']:,}</b>\n"
+        f"   Total 👎 Dislikes   :  <b>{s['total_dislikes']:,}</b>\n"
+        f"   Total 👁️ Views      :  <b>{s['total_views']:,}</b>\n\n"
+
+        "━━━━━━  📡  <b>CHANNELS</b>  ━━━━━━\n"
+        f"   Saved Channels      :  <b>{s['total_saved_channels']:,}</b>\n"
+        f"   Posts Sent          :  <b>{s['total_sent_messages']:,}</b>\n\n"
+
+        "━━━━━━  ⚡  <b>AUTO BUTTON ADDER</b>  ━━━━━━\n"
+        f"   Total Projects      :  <b>{s['total_projects']:,}</b>\n"
+        f"   🟢 Active Projects  :  <b>{s['active_projects']:,}</b>\n"
+        f"   Auto-Reacted Posts  :  <b>{s['ch_auto_reacted']:,}</b>\n\n"
+
+        "━━━━━━  🏆  <b>TOP STAT</b>  ━━━━━━\n"
+        f"   {top_line}\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"   🕐  Generated: <code>{now}</code>\n"
+        "   🌐  Platform: <b>Univora</b> (univora.site)\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+
+    await update.message.reply_text(
+        card,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔄 Refresh", callback_data="admin_stats_refresh",
+                                 api_kwargs={"style": "primary"}),
+            InlineKeyboardButton("🌐 Univora", url="https://univora.site",
+                                 api_kwargs={"style": "success"}),
+        ]])
+    )
+
+
+async def admin_stats_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Inline 🔄 Refresh button for /stats card."""
+    q = update.callback_query
+    await q.answer("🔄 Refreshing…")
+    user_id = update.effective_user.id
+
+    if OWNER_IDS and user_id not in OWNER_IDS:
+        await q.answer("🔒 Admins only!", show_alert=True)
+        return
+
+    s = await db.get_global_stats()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).strftime("%d %b %Y • %H:%M UTC")
+
+    if s["top_user_id"]:
+        try:
+            chat = await ctx.bot.get_chat(s["top_user_id"])
+            top_name = (chat.username and f"@{chat.username}") or chat.full_name or str(s["top_user_id"])
+        except Exception:
+            top_name = f"User #{s['top_user_id']}"
+        top_line = f"👑 <b>Top Creator:</b>  {top_name}  ({s['top_user_posts']} posts)"
+    else:
+        top_line = "👑 <b>Top Creator:</b>  —"
+
+    card = (
+        "╔══════════════════════════════════════╗\n"
+        "║   📊  <b>UNIVORA BUTTON BOT — STATS</b>   ║\n"
+        "╚══════════════════════════════════════╝\n\n"
+        "━━━━━━  👥  <b>USERS</b>  ━━━━━━\n"
+        f"   Total Bot Users     :  <b>{s['total_users']:,}</b>\n"
+        f"   Active Today        :  <b>{s['today_users']:,}</b>\n\n"
+        "━━━━━━  📝  <b>POSTS</b>  ━━━━━━\n"
+        f"   Total Posts Created :  <b>{s['total_posts']:,}</b>\n"
+        f"   Created Today       :  <b>{s['posts_today']:,}</b>\n\n"
+        "━━━━━━  🔘  <b>BUTTONS</b>  ━━━━━━\n"
+        f"   Total Buttons       :  <b>{s['total_buttons']:,}</b>\n"
+        f"   ├ 🔗 URL Buttons    :  <b>{s['url_buttons']:,}</b>\n"
+        f"   ├ 👍 Like Buttons   :  <b>{s['like_buttons']:,}</b>\n"
+        f"   ├ 👁️ View Buttons   :  <b>{s['view_buttons']:,}</b>\n"
+        f"   └ 📤 Share Buttons  :  <b>{s['share_buttons']:,}</b>\n\n"
+        "━━━━━━  ❤️  <b>ENGAGEMENT</b>  ━━━━━━\n"
+        f"   Total 👍 Likes      :  <b>{s['total_likes']:,}</b>\n"
+        f"   Total 👎 Dislikes   :  <b>{s['total_dislikes']:,}</b>\n"
+        f"   Total 👁️ Views      :  <b>{s['total_views']:,}</b>\n\n"
+        "━━━━━━  📡  <b>CHANNELS</b>  ━━━━━━\n"
+        f"   Saved Channels      :  <b>{s['total_saved_channels']:,}</b>\n"
+        f"   Posts Sent          :  <b>{s['total_sent_messages']:,}</b>\n\n"
+        "━━━━━━  ⚡  <b>AUTO BUTTON ADDER</b>  ━━━━━━\n"
+        f"   Total Projects      :  <b>{s['total_projects']:,}</b>\n"
+        f"   🟢 Active Projects  :  <b>{s['active_projects']:,}</b>\n"
+        f"   Auto-Reacted Posts  :  <b>{s['ch_auto_reacted']:,}</b>\n\n"
+        "━━━━━━  🏆  <b>TOP STAT</b>  ━━━━━━\n"
+        f"   {top_line}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"   🕐  Generated: <code>{now}</code>\n"
+        "   🌐  Platform: <b>Univora</b> (univora.site)\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+
+    try:
+        await q.edit_message_text(
+            card,
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Refresh", callback_data="admin_stats_refresh",
+                                     api_kwargs={"style": "primary"}),
+                InlineKeyboardButton("🌐 Univora", url="https://univora.site",
+                                     api_kwargs={"style": "success"}),
+            ]])
+        )
+    except Exception:
+        pass
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -2325,7 +2497,13 @@ def build_app() -> Application:
     app.add_handler(ChosenInlineResultHandler(chosen_inline_result))
 
     # ─── Commands outside conv ────────────────────────────
-    app.add_handler(CommandHandler("help",   cmd_help))
+    app.add_handler(CommandHandler("help",  cmd_help))
+    app.add_handler(CommandHandler("stats", cmd_admin_stats))
+
+    # ─── Admin stats refresh callback ────────────────────
+    app.add_handler(CallbackQueryHandler(
+        admin_stats_refresh_callback, pattern=r"^admin_stats_refresh$"
+    ))
 
     return app
 

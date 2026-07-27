@@ -440,6 +440,93 @@ async def update_channel_title(row_id: int, title: str) -> None:
 
 
 # ═══════════════════════════════════════════
+#       GLOBAL BOT STATISTICS  (Admin /stats)
+# ═══════════════════════════════════════════
+
+async def get_global_stats() -> dict:
+    """
+    Aggregate bot-wide statistics for the admin /stats command.
+    Returns a dict with all key metrics.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        async def _one(q, *args):
+            async with db.execute(q, args) as cur:
+                row = await cur.fetchone()
+                return row[0] if row else 0
+
+        # ── Users ──────────────────────────────────────────────
+        total_users   = await _one("SELECT COUNT(DISTINCT user_id) FROM posts")
+        # New today (posts created today acts as proxy; best we can do without user table)
+        today_users   = await _one(
+            "SELECT COUNT(DISTINCT user_id) FROM posts WHERE date(created_at)=date('now')"
+        )
+
+        # ── Posts ──────────────────────────────────────────────
+        total_posts   = await _one("SELECT COUNT(*) FROM posts")
+        posts_today   = await _one(
+            "SELECT COUNT(*) FROM posts WHERE date(created_at)=date('now')"
+        )
+
+        # ── Buttons ────────────────────────────────────────────
+        total_buttons = await _one("SELECT COUNT(*) FROM post_buttons")
+        url_buttons   = await _one("SELECT COUNT(*) FROM post_buttons WHERE button_type='url'")
+        like_buttons  = await _one("SELECT COUNT(*) FROM post_buttons WHERE button_type='like'")
+        view_buttons  = await _one("SELECT COUNT(*) FROM post_buttons WHERE button_type='views'")
+        share_buttons = await _one("SELECT COUNT(*) FROM post_buttons WHERE button_type='share'")
+
+        # ── Reactions / Engagement ─────────────────────────────
+        total_likes    = await _one("SELECT COALESCE(SUM(likes),0)    FROM post_reactions")
+        total_dislikes = await _one("SELECT COALESCE(SUM(dislikes),0) FROM post_reactions")
+        total_views    = await _one("SELECT COALESCE(SUM(views),0)    FROM post_reactions")
+
+        # ── Channel activity ───────────────────────────────────
+        total_saved_channels = await _one("SELECT COUNT(*) FROM user_channels")
+        total_sent_messages  = await _one("SELECT COUNT(*) FROM sent_messages")
+
+        # ── Auto Button Adder ──────────────────────────────────
+        total_projects = await _one("SELECT COUNT(*) FROM channel_projects")
+        active_projs   = await _one("SELECT COUNT(*) FROM channel_projects WHERE is_active=1")
+        ch_auto_reacted= await _one("SELECT COUNT(*) FROM channel_post_reactions")
+
+        # ── Top user (most posts) ──────────────────────────────
+        async with db.execute(
+            "SELECT user_id, COUNT(*) as c FROM posts GROUP BY user_id ORDER BY c DESC LIMIT 1"
+        ) as cur:
+            top_row = await cur.fetchone()
+            top_user_id    = top_row[0] if top_row else None
+            top_user_posts = top_row[1] if top_row else 0
+
+        return {
+            # Users
+            "total_users":        total_users,
+            "today_users":        today_users,
+            # Posts
+            "total_posts":        total_posts,
+            "posts_today":        posts_today,
+            # Buttons
+            "total_buttons":      total_buttons,
+            "url_buttons":        url_buttons,
+            "like_buttons":       like_buttons,
+            "view_buttons":       view_buttons,
+            "share_buttons":      share_buttons,
+            # Engagement
+            "total_likes":        total_likes,
+            "total_dislikes":     total_dislikes,
+            "total_views":        total_views,
+            # Channels
+            "total_saved_channels": total_saved_channels,
+            "total_sent_messages":  total_sent_messages,
+            # Auto Adder
+            "total_projects":     total_projects,
+            "active_projects":    active_projs,
+            "ch_auto_reacted":    ch_auto_reacted,
+            # Top user
+            "top_user_id":        top_user_id,
+            "top_user_posts":     top_user_posts,
+        }
+
+
+# ═══════════════════════════════════════════
 #           CHANNEL PROJECTS (Auto Button Adder)
 # ═══════════════════════════════════════════
 

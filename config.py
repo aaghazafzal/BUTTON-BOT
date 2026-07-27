@@ -27,7 +27,18 @@ MONGO_URI = None          # e.g. "mongodb+srv://user:pass@cluster.mongodb.net/"
 MONGO_DB_NAME = "button_bot"
 
 # ─── Bot Owners / Admins ─────────────────────────────
-OWNER_IDS = []            # Yahan apna Telegram user_id daalo [123456789]
+# Set your Telegram user_id(s) here OR via ADMIN_IDS env var (comma-separated).
+# Example env:  ADMIN_IDS=123456789,987654321
+def _load_admin_ids() -> list[int]:
+    raw = os.environ.get("ADMIN_IDS", "")
+    ids = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    return ids
+
+OWNER_IDS: list[int] = _load_admin_ids()   # Set ADMIN_IDS env var on Render!
 
 # ─── Limits ──────────────────────────────────────────
 MAX_POSTS_PER_USER = 100       # Ek user kitne posts rakh sakta hai
