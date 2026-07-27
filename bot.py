@@ -13,6 +13,7 @@ import asyncio
 import os
 import json
 import re
+import backup as bkp
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
     InlineQueryResultArticle, InputTextMessageContent,
@@ -2512,8 +2513,9 @@ def build_app() -> Application:
     app.add_handler(ChosenInlineResultHandler(chosen_inline_result))
 
     # ─── Commands outside conv ────────────────────────────
-    app.add_handler(CommandHandler("help",  cmd_help))
-    app.add_handler(CommandHandler("stats", cmd_admin_stats))
+    app.add_handler(CommandHandler("help",   cmd_help))
+    app.add_handler(CommandHandler("stats",  cmd_admin_stats))
+    app.add_handler(CommandHandler("backup", cmd_manual_backup))
 
     # ─── Admin stats refresh callback ────────────────────
     app.add_handler(CallbackQueryHandler(
@@ -2523,8 +2525,49 @@ def build_app() -> Application:
     return app
 
 
+# ════════════════════════════════════════════════════════
+#   ADMIN /backup — Manual DB Backup Trigger
+# ════════════════════════════════════════════════════════
+
+async def cmd_manual_backup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Admin-only /backup command — triggers an immediate DB backup to Telegram."""
+    user_id = update.effective_user.id
+
+    if OWNER_IDS and user_id not in OWNER_IDS:
+        await update.message.reply_text(
+            "🔒 <b>Access Denied</b>\n\nAdmins only.",
+            parse_mode=ParseMode.HTML
+        )
+        return
+
+    if not bkp.BACKUP_CHAT_ID:
+        await update.message.reply_text(
+            "⚠️ <b>Backup Not Configured</b>\n\n"
+            "Set the <code>BACKUP_CHAT_ID</code> environment variable on Render "
+            "to enable Telegram backups.",
+            parse_mode=ParseMode.HTML
+        )
+        return
+
+    msg = await update.message.reply_text("⏳ Backing up database…")
+    from config import DB_PATH
+    ok = await bkp.backup_db(ctx.bot, DB_PATH)
+    if ok:
+        await msg.edit_text(
+            "✅ <b>Backup Successful!</b>\n\n"
+            "Database has been uploaded and pinned in the backup channel.",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        await msg.edit_text(
+            "❌ <b>Backup Failed</b>\n\n"
+            "Check bot logs for details.",
+            parse_mode=ParseMode.HTML
+        )
+
+
 async def main():
-    # Start keep-alive Flask server if running on Render
+    # ── Keep-alive (Render) ─────────────────────────────────
     if os.environ.get("RENDER"):
         import keep_alive
         keep_alive.start()
@@ -2532,10 +2575,23 @@ async def main():
     app = build_app()
     await db.init_db()
     await app.initialize()
+
+    # ── Restore DB from Telegram backup (Render: prevents data loss on redeploy)
+    from config import DB_PATH
+    if os.environ.get("RENDER") or bkp.BACKUP_CHAT_ID:
+        logger.info("backup: Attempting to restore DB from Telegram on startup…")
+        restored = await bkp.restore_db(app.bot, DB_PATH)
+        if restored:
+            # Re-run init_db to ensure all tables exist in the restored DB
+            await db.init_db()
+
     uname = await _get_username(app.bot)
     logger.info(f"Bot running as @{uname}")
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
+
+    # ── Start auto-backup loop ──────────────────────────────
+    bkp.start_backup_loop(app.bot, DB_PATH)
 
     stop = asyncio.Event()
     try:
@@ -2543,6 +2599,10 @@ async def main():
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
+        # Final backup before shutdown
+        if bkp.BACKUP_CHAT_ID:
+            logger.info("backup: Performing final backup before shutdown…")
+            await bkp.backup_db(app.bot, DB_PATH)
         await app.updater.stop()
         await app.stop()
         await app.shutdown()
