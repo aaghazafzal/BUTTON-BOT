@@ -20,13 +20,13 @@ from config import COLOR_EMOJIS, COLORS_DISPLAY
 
 # ─── Button label constants ────────────────────────────────────────────────────
 
-BTN_CREATE    = "📝 Create Post"
-BTN_MYPOSTS   = "📋 My Posts"
-BTN_CHANNEL   = "📡 Send to Channel"
-BTN_STATS     = "📊 Stats"
-BTN_HELP      = "ℹ️ Help"
-BTN_SETTINGS  = "⚙️ Settings"
-BTN_AUTO_ADDER = "⚡ Auto Button Adder"
+BTN_CREATE    = "✨ Create Post"
+BTN_MYPOSTS   = "📂 My Posts"
+BTN_CHANNEL   = "🚀 Send to Channel"
+BTN_STATS     = "📈 Stats"
+BTN_HELP      = "💡 Help"
+BTN_SETTINGS  = "🛠️ Settings"
+BTN_AUTO_ADDER = "💠 Auto Button Adder"
 
 BTN_ADD_URL   = "➕ Add URL Button"
 BTN_ADD_LD    = "👍👎 Add Like / Dislike"

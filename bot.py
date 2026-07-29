@@ -245,22 +245,6 @@ async def welcome_launch_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE
     )
 
 
-async def cmd_testemoji(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Secret testing command to render an animated emoji by ID."""
-    if not ctx.args:
-        await update.message.reply_text(
-            "❌ Please provide a Custom Emoji ID.\n\n"
-            "Usage: `/testemoji 5368324170671202286`",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-    emoji_id = ctx.args[0]
-    await update.message.reply_text(
-        f"Testing emoji: <tg-emoji emoji-id=\"{emoji_id}\">🌟</tg-emoji>",
-        parse_mode=ParseMode.HTML
-    )
-
-
 async def welcome_help_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Called when user clicks 'ℹ️ Help Center' on the welcome card."""
     q = update.callback_query
@@ -2540,7 +2524,6 @@ def build_app() -> Application:
     # ─── Commands outside conv ────────────────────────────
     app.add_handler(CommandHandler("help",  cmd_help))
     app.add_handler(CommandHandler("stats", cmd_admin_stats))
-    app.add_handler(CommandHandler("testemoji", cmd_testemoji))
 
     # ─── Admin stats refresh callback ────────────────────
     app.add_handler(CallbackQueryHandler(
