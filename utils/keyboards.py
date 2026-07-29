@@ -592,3 +592,13 @@ def settings_inline_kb(website_url: str, channel_url: str) -> InlineKeyboardMark
         ]
     ]
     return InlineKeyboardMarkup(kb)
+
+def user_stats_inline_kb() -> InlineKeyboardMarkup:
+    """Inline keyboard for the User Stats command card."""
+    kb = [
+        [
+            _ib("📂 My Posts", cb="inline_myposts", style="primary"),
+            _ib("🔄 Refresh", cb="user_stats_refresh", style="success")
+        ]
+    ]
+    return InlineKeyboardMarkup(kb)

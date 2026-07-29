@@ -52,7 +52,7 @@ from utils.keyboards import (
     help_main_inline_kb, help_topic_inline_kb,
     welcome_inline_kb, force_join_inline_kb,
     project_post_keyboard, my_projects_inline_kb,
-    settings_inline_kb,
+    settings_inline_kb, user_stats_inline_kb,
     # Button text constants
     BTN_CREATE, BTN_MYPOSTS, BTN_CHANNEL, BTN_STATS, BTN_HELP, BTN_SETTINGS,
     BTN_AUTO_ADDER,
@@ -597,32 +597,97 @@ async def on_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Top post by views
     if posts and total_views > 0:
         top = max(posts, key=lambda p: p.get('views', 0))
-        top_line = f"\n• <b>Top Post:</b>  #<code>{top['id']}</code>  —  👁️ <b>{fmt_num(top.get('views', 0))}</b> views"
+        top_line = f"\n   👑 <b>Top Post:</b>  #<code>{top['id']}</code>  —  👁️ <b>{fmt_num(top.get('views', 0))}</b> views"
     else:
         top_line = ""
 
     text = (
-        "📊 <b>Stats Overview</b>\n\n"
+        "╔══════════════════════════════════════╗\n"
+        "║       📊  <b>YOUR STATS OVERVIEW</b>        ║\n"
+        "╚══════════════════════════════════════╝\n\n"
 
-        "📝  Posts Saved\n"
-        f"      <b>{total_posts}</b> of 100  —  <code>{'#' * min(total_posts, 10)}{'-' * (10 - min(total_posts, 10))}</code>\n\n"
+        "━━━━━━  📝  <b>POSTS SAVED</b>  ━━━━━━\n"
+        f"   <b>{total_posts}</b> of 100  —  <code>{'#' * min(total_posts, 10)}{'-' * (10 - min(total_posts, 10))}</code>\n\n"
 
-        "👍  Likes  ·  👎  Dislikes\n"
-        f"      <b>{fmt_num(total_likes)}</b>  ·  <b>{fmt_num(total_dislikes)}</b>\n"
-        f"      [{bar}]  {like_pct}% positive\n\n"
+        "━━━━━━  ❤️  <b>ENGAGEMENT</b>  ━━━━━━\n"
+        f"   👍 <b>Likes:</b>  <b>{fmt_num(total_likes)}</b>\n"
+        f"   👎 <b>Dislikes:</b>  <b>{fmt_num(total_dislikes)}</b>\n"
+        f"   <code>[{bar}]</code>  {like_pct}% positive\n\n"
 
-        "👁️  Total Views\n"
-        f"      <b>{fmt_num(total_views)}</b>"
+        "━━━━━━  👁️  <b>TOTAL VIEWS</b>  ━━━━━━\n"
+        f"   <b>Count:</b>  <b>{fmt_num(total_views)}</b>"
         f"{top_line}\n\n"
 
-        "<i>🌐 Univora Platform</i>"
+        "<i>🌐 Powered by Univora Platform</i>"
     )
+    
+    kb = user_stats_inline_kb()
+    
     await update.message.reply_text(
         text,
         parse_mode=ParseMode.HTML,
-        reply_markup=main_menu_reply_kb()
+        reply_markup=kb
     )
     return MAIN_MENU
+
+async def user_stats_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Refresh the user stats card."""
+    q = update.callback_query
+    await q.answer("Refreshing stats...")
+    user_id = update.effective_user.id
+    posts   = await db.get_user_posts(user_id)
+
+    total_posts    = len(posts)
+    total_likes    = sum(p.get('likes',    0) for p in posts)
+    total_dislikes = sum(p.get('dislikes', 0) for p in posts)
+    total_views    = sum(p.get('views',    0) for p in posts)
+    total_reactions = total_likes + total_dislikes
+
+    if total_reactions:
+        like_pct    = round(total_likes    / total_reactions * 100)
+        dislike_pct = 100 - like_pct
+        bar_filled  = round(like_pct / 10)
+        bar = "█" * bar_filled + "░" * (10 - bar_filled)
+    else:
+        like_pct = dislike_pct = 0
+        bar = "░" * 10
+
+    if posts and total_views > 0:
+        top = max(posts, key=lambda p: p.get('views', 0))
+        top_line = f"\n   👑 <b>Top Post:</b>  #<code>{top['id']}</code>  —  👁️ <b>{fmt_num(top.get('views', 0))}</b> views"
+    else:
+        top_line = ""
+
+    text = (
+        "╔══════════════════════════════════════╗\n"
+        "║       📊  <b>YOUR STATS OVERVIEW</b>        ║\n"
+        "╚══════════════════════════════════════╝\n\n"
+
+        "━━━━━━  📝  <b>POSTS SAVED</b>  ━━━━━━\n"
+        f"   <b>{total_posts}</b> of 100  —  <code>{'#' * min(total_posts, 10)}{'-' * (10 - min(total_posts, 10))}</code>\n\n"
+
+        "━━━━━━  ❤️  <b>ENGAGEMENT</b>  ━━━━━━\n"
+        f"   👍 <b>Likes:</b>  <b>{fmt_num(total_likes)}</b>\n"
+        f"   👎 <b>Dislikes:</b>  <b>{fmt_num(total_dislikes)}</b>\n"
+        f"   <code>[{bar}]</code>  {like_pct}% positive\n\n"
+
+        "━━━━━━  👁️  <b>TOTAL VIEWS</b>  ━━━━━━\n"
+        f"   <b>Count:</b>  <b>{fmt_num(total_views)}</b>"
+        f"{top_line}\n\n"
+
+        "<i>🌐 Powered by Univora Platform</i>"
+    )
+    
+    kb = user_stats_inline_kb()
+    if q.message.text_html != text:
+        try:
+            await q.edit_message_text(
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        except Exception:
+            pass
 
 
 async def on_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -2585,6 +2650,9 @@ def build_app() -> Application:
     ))
     app.add_handler(CallbackQueryHandler(
         settings_refresh_callback, pattern=r"^settings_refresh$"
+    ))
+    app.add_handler(CallbackQueryHandler(
+        user_stats_refresh_callback, pattern=r"^user_stats_refresh$"
     ))
 
     return app
