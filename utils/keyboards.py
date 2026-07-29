@@ -578,3 +578,17 @@ def my_projects_inline_kb(projects: list) -> InlineKeyboardMarkup:
         ])
     rows.append([_ib("🔙 Back", cb="proj_back", style="primary")])
     return InlineKeyboardMarkup(rows)
+
+
+def settings_inline_kb(website_url: str, channel_url: str) -> InlineKeyboardMarkup:
+    """Inline keyboard for the Settings command card."""
+    kb = [
+        [
+            _ib("📢 Official Channel", url=channel_url, style="primary"),
+            _ib("🌐 Website", url=website_url, style="primary")
+        ],
+        [
+            _ib("🔄 Refresh Data", cb="settings_refresh", style="success")
+        ]
+    ]
+    return InlineKeyboardMarkup(kb)

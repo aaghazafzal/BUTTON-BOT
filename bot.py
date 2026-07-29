@@ -46,6 +46,7 @@ from utils.keyboards import (
     help_main_inline_kb, help_topic_inline_kb,
     welcome_inline_kb, force_join_inline_kb,
     project_post_keyboard, my_projects_inline_kb,
+    settings_inline_kb,
     # Button text constants
     BTN_CREATE, BTN_MYPOSTS, BTN_CHANNEL, BTN_STATS, BTN_HELP, BTN_SETTINGS,
     BTN_AUTO_ADDER,
@@ -666,32 +667,91 @@ async def on_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     channels = await db.get_user_channels(user_id)
     used_posts = len(posts)
     used_chan  = len(channels)
-    posts_bar = '█' * min(used_posts, 10) + '░' * (10 - min(used_posts, 10))
+    pct = (used_posts / MAX_POSTS_PER_USER) * 10
+    filled = int(pct)
+    posts_bar = '█' * filled + '░' * (10 - filled)
 
     text = (
-        "⚙️ <b>Settings</b>\n\n"
+        "╔══════════════════════════════════════╗\n"
+        "║      🛠️  <b>UNIVORA BUTTON BOT — SETTINGS</b>      ║\n"
+        "╚══════════════════════════════════════╝\n\n"
 
-        "🤖  About this Bot\n"
-        f"      @<code>{uname}</code>\n"
-        f"      Part of <a href='https://univora.website'><b>Univora Platform</b></a> 🌐\n"
-        f"      Official Channel → <a href='https://t.me/Univora88'>@Univora88</a>\n\n"
+        "━━━━━━  🤖  <b>ABOUT THIS BOT</b>  ━━━━━━\n"
+        f"   <b>Bot ID:</b>  @<code>{uname}</code>\n"
+        f"   <b>Network:</b>  <a href='https://univora.website'>Univora Platform</a> 🌐\n\n"
 
-        "📊  Your Usage\n"
-        f"      Posts:     <b>{used_posts}</b> / 100 <code>[{posts_bar}]</code>\n"
-        f"      Channels:  <b>{used_chan}</b> saved\n\n"
+        "━━━━━━  📊  <b>YOUR USAGE</b>  ━━━━━━\n"
+        f"   <b>Posts Created:</b>  <b>{used_posts}</b> / {MAX_POSTS_PER_USER}\n"
+        f"   <code>[{posts_bar}]</code>\n"
+        f"   <b>Saved Channels:</b>  <b>{used_chan}</b> channels\n\n"
 
-        "🔒  Force Join\n"
-        f"      <b>@Univora88</b>  —  ✅ Active\n\n"
-
-        "<i>More options coming soon!</i>"
+        "━━━━━━  🔒  <b>FORCE JOIN</b>  ━━━━━━\n"
+        f"   <b>Status:</b>  ✅ Active\n"
+        f"   <b>Channel:</b>  @Univora88\n\n"
+        
+        "<i>✨ More advanced settings are coming soon. Stay tuned!</i>"
     )
+    
+    kb = settings_inline_kb(WEBSITE_URL, FORCE_JOIN_CHANNEL_URL)
+
     await update.message.reply_text(
         text,
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
-        reply_markup=main_menu_reply_kb()
+        reply_markup=kb
     )
     return MAIN_MENU
+
+async def settings_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Callback to refresh the settings card data."""
+    q = update.callback_query
+    await q.answer("Refreshing settings...")
+    
+    user_id  = update.effective_user.id
+    uname    = await _get_username(ctx.bot)
+    posts    = await db.get_user_posts(user_id)
+    channels = await db.get_user_channels(user_id)
+    used_posts = len(posts)
+    used_chan  = len(channels)
+    
+    pct = (used_posts / MAX_POSTS_PER_USER) * 10
+    filled = int(pct)
+    posts_bar = '█' * filled + '░' * (10 - filled)
+
+    text = (
+        "╔══════════════════════════════════════╗\n"
+        "║      🛠️  <b>UNIVORA BUTTON BOT — SETTINGS</b>      ║\n"
+        "╚══════════════════════════════════════╝\n\n"
+
+        "━━━━━━  🤖  <b>ABOUT THIS BOT</b>  ━━━━━━\n"
+        f"   <b>Bot ID:</b>  @<code>{uname}</code>\n"
+        f"   <b>Network:</b>  <a href='https://univora.website'>Univora Platform</a> 🌐\n\n"
+
+        "━━━━━━  📊  <b>YOUR USAGE</b>  ━━━━━━\n"
+        f"   <b>Posts Created:</b>  <b>{used_posts}</b> / {MAX_POSTS_PER_USER}\n"
+        f"   <code>[{posts_bar}]</code>\n"
+        f"   <b>Saved Channels:</b>  <b>{used_chan}</b> channels\n\n"
+
+        "━━━━━━  🔒  <b>FORCE JOIN</b>  ━━━━━━\n"
+        f"   <b>Status:</b>  ✅ Active\n"
+        f"   <b>Channel:</b>  @Univora88\n\n"
+        
+        "<i>✨ More advanced settings are coming soon. Stay tuned!</i>"
+    )
+    
+    kb = settings_inline_kb(WEBSITE_URL, FORCE_JOIN_CHANNEL_URL)
+    
+    if q.message.text_html != text:
+        try:
+            await q.edit_message_text(
+                text=text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=kb
+            )
+        except Exception:
+            pass
+
 
 
 async def on_cancel_to_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -2528,6 +2588,9 @@ def build_app() -> Application:
     # ─── Admin stats refresh callback ────────────────────
     app.add_handler(CallbackQueryHandler(
         admin_stats_refresh_callback, pattern=r"^admin_stats_refresh$"
+    ))
+    app.add_handler(CallbackQueryHandler(
+        settings_refresh_callback, pattern=r"^settings_refresh$"
     ))
 
     return app
