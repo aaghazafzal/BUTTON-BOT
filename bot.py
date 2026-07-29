@@ -481,6 +481,37 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     return MAIN_MENU
 
+async def cmd_about(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """About this bot"""
+    username = await _get_username(ctx.bot)
+    text = (
+        "╭────[ 👤 <b>ᴍʏ ᴅᴇᴛᴀɪʟs</b> ]────⍟\n"
+        f"├⍟ 🤖 <b>ʙᴏᴛ ɴᴀᴍᴇ :</b> <a href='https://t.me/{username}'>BUTTON BOT [UNIVORA]</a>\n"
+        "├⍟ 👨‍💻 <b>ᴅᴇᴠᴇʟᴏᴘᴇʀ :</b> <a href='https://t.me/rolexsir_8'>Rolex Sir</a>\n"
+        "├⍟ 🌐 <b>ᴡᴇʙsɪᴛᴇ :</b> <a href='https://univora.website/'>univora.website</a>\n"
+        "├⍟ 📚 <b>ᴘʟᴀᴛꜰᴏʀᴍ :</b> ᴜɴɪᴠᴏʀᴀ ᴘʟᴀᴛꜰᴏʀᴍ\n"
+        "├⍟ ⚡ <b>ʟɪʙʀᴀʀʏ :</b> <a href='https://python-telegram-bot.org/'>ᴘʏᴛʜᴏɴ-ᴛᴇʟᴇɢʀᴀᴍ-ʙᴏᴛ</a>\n"
+        "├⍟ 💻 <b>ʟᴀɴɢᴜᴀɢᴇ :</b> <a href='https://www.python.org/download/releases/3.0/'>ᴘʏᴛʜᴏɴ 𝟹</a>\n"
+        "├⍟ 🛠 <b>ʙᴜɪʟᴅ Sᴛᴀᴛᴜs :</b> ᴠ2.0 [ ꜱᴛᴀʙʟᴇ ]\n"
+        "╰───────────────⍟\n\n"
+        "🎓 <i>Hello! I am a student and I create bots like this just for enjoyment and learning. This bot is proudly presented to you by the Univora Platform.</i>\n\n"
+        "⚠️ <b>Dɪsᴄʟᴀɪᴍᴇʀ :</b> <i>I am an inline button generation bot. I do not store or host any media files. I simply help users attach beautiful buttons to their existing posts. The content shared using my buttons is the sole responsibility of the respective users!</i>"
+    )
+    try:
+        with open(START_LOGO_PATH, "rb") as f:
+            await update.message.reply_photo(
+                photo=f,
+                caption=text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True
+            )
+    except Exception:
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
+
 
 # ═══════════════════════════════════════════════════════
 #           MAIN MENU BUTTON HANDLERS
@@ -2642,6 +2673,7 @@ def build_app() -> Application:
 
     # ─── Commands outside conv ────────────────────────────
     app.add_handler(CommandHandler("help",  cmd_help))
+    app.add_handler(CommandHandler("about", cmd_about))
     app.add_handler(CommandHandler("stats", cmd_admin_stats))
 
     # ─── Admin stats refresh callback ────────────────────
@@ -2662,7 +2694,8 @@ async def setup_commands(bot):
     """Set the Bot menu commands (Default vs Admin)."""
     default_commands = [
         BotCommand("start", "Open main menu / Check status"),
-        BotCommand("help", "Get help and instructions")
+        BotCommand("help", "Get help and instructions"),
+        BotCommand("about", "About this bot & developer")
     ]
     await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
 
