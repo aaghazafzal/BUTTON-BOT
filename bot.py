@@ -15,8 +15,14 @@ import json
 import re
 
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    InlineQueryResultArticle, InputTextMessageContent,
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+    BotCommand,
+    BotCommandScopeDefault,
+    BotCommandScopeChat,
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
@@ -2584,6 +2590,24 @@ def build_app() -> Application:
     return app
 
 
+async def setup_commands(bot):
+    """Set the Bot menu commands (Default vs Admin)."""
+    default_commands = [
+        BotCommand("start", "Open main menu / Check status"),
+        BotCommand("help", "Get help and instructions")
+    ]
+    await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
+
+    admin_commands = default_commands + [
+        BotCommand("stats", "View bot statistics (Admin Only)")
+    ]
+    for admin_id in OWNER_IDS:
+        try:
+            await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_id))
+        except Exception as e:
+            logger.warning(f"Could not set admin commands for {admin_id}: {e}")
+
+
 async def main():
     # ── Keep-alive (Render) ─────────────────────────────────
     if os.environ.get("RENDER"):
@@ -2593,6 +2617,7 @@ async def main():
     app = build_app()
     await db.init_db()
     await app.initialize()
+    await setup_commands(app.bot)
 
     uname = await _get_username(app.bot)
     logger.info(f"Bot running as @{uname}")
