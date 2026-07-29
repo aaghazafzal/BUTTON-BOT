@@ -683,13 +683,7 @@ async def on_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "━━━━━━  📊  <b>YOUR USAGE</b>  ━━━━━━\n"
         f"   <b>Posts Created:</b>  <b>{used_posts}</b> / {MAX_POSTS_PER_USER}\n"
         f"   <code>[{posts_bar}]</code>\n"
-        f"   <b>Saved Channels:</b>  <b>{used_chan}</b> channels\n\n"
-
-        "━━━━━━  🔒  <b>FORCE JOIN</b>  ━━━━━━\n"
-        f"   <b>Status:</b>  ✅ Active\n"
-        f"   <b>Channel:</b>  @Univora88\n\n"
-        
-        "<i>✨ More advanced settings are coming soon. Stay tuned!</i>"
+        f"   <b>Saved Channels:</b>  <b>{used_chan}</b> channels"
     )
     
     kb = settings_inline_kb(WEBSITE_URL, FORCE_JOIN_CHANNEL_URL)
@@ -730,13 +724,7 @@ async def settings_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
         "━━━━━━  📊  <b>YOUR USAGE</b>  ━━━━━━\n"
         f"   <b>Posts Created:</b>  <b>{used_posts}</b> / {MAX_POSTS_PER_USER}\n"
         f"   <code>[{posts_bar}]</code>\n"
-        f"   <b>Saved Channels:</b>  <b>{used_chan}</b> channels\n\n"
-
-        "━━━━━━  🔒  <b>FORCE JOIN</b>  ━━━━━━\n"
-        f"   <b>Status:</b>  ✅ Active\n"
-        f"   <b>Channel:</b>  @Univora88\n\n"
-        
-        "<i>✨ More advanced settings are coming soon. Stay tuned!</i>"
+        f"   <b>Saved Channels:</b>  <b>{used_chan}</b> channels"
     )
     
     kb = settings_inline_kb(WEBSITE_URL, FORCE_JOIN_CHANNEL_URL)
