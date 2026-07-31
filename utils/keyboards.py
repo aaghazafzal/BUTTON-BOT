@@ -183,7 +183,10 @@ def remove_button_reply_kb(buttons: list) -> ReplyKeyboardMarkup:
         btn_text = btn.get('text', 'Unknown Button')
         rows.append([KeyboardButton(btn_text)])
     
-    rows.append([KeyboardButton(BTN_CANCEL, api_kwargs={"style": "danger"})])
+    rows.append([
+        KeyboardButton(BTN_BACK_MAIN, api_kwargs={"style": "primary"}),
+        KeyboardButton(BTN_CANCEL, api_kwargs={"style": "danger"})
+    ])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 

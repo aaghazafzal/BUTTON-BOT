@@ -1031,15 +1031,23 @@ async def receive_button_to_remove(update: Update, ctx: ContextTypes.DEFAULT_TYP
         )
         return REMOVING_BUTTON
         
-    # Remove it from the database list
+    # Remove it from the database
     removed_btn = buttons.pop(target_idx)
-    await db.update_post_buttons(post_id, buttons)
+    await db.delete_button(removed_btn['_id'])
     
     # If the button was a reaction or share button, we also need to clear its state
     # Wait, the bot automatically computes existing_types based on what's in the button array? 
     # Let's see... `has_reaction_buttons` scans the array. So removing from DB array is enough!
     
     await _refresh_panel(update, ctx, post_id, f"➖ Removed '{selected_text}'")
+    return MANAGING_BUTTONS
+
+
+async def on_back_to_manage(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    post_id = ctx.user_data.get('current_post_id')
+    if not post_id:
+        return await on_cancel_to_menu(update, ctx)
+    await _refresh_panel(update, ctx, post_id, "🔙 Cancelled removal.")
     return MANAGING_BUTTONS
 
 
@@ -2648,6 +2656,7 @@ def build_app() -> Application:
                 ),
             ],
             REMOVING_BUTTON: [
+                MessageHandler(txt(BTN_BACK_MAIN), on_back_to_manage),
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
                 MessageHandler(filters.TEXT & ~nav_filter, receive_button_to_remove),
             ],
