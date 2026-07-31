@@ -56,7 +56,7 @@ from utils.keyboards import (
     # Button text constants
     BTN_CREATE, BTN_MYPOSTS, BTN_CHANNEL, BTN_STATS, BTN_HELP, BTN_SETTINGS,
     BTN_AUTO_ADDER,
-    BTN_ADD_URL, BTN_ADD_LD, BTN_ADD_VIEWS, BTN_ADD_SHARE,
+    BTN_ADD_URL, BTN_ADD_LD, BTN_ADD_VIEWS, BTN_ADD_SHARE, BTN_ADD_CUSTOM_REACTION,
     BTN_TEMPLATES, BTN_CLEAR, BTN_PREVIEW, BTN_DONE, BTN_CANCEL,
     TMPL_LD, TMPL_LDV, TMPL_LDS, TMPL_VS, TMPL_S, TMPL_BACK,
     BTN_PROJ_NEW, BTN_PROJ_ADD_POST, BTN_MY_PROJECTS, BTN_BACK_MAIN,
@@ -98,6 +98,7 @@ PROJ_WAIT_FWD    = 13   # waiting for forwarded post / @channelname
 PROJ_MANAGE_BTNS = 14   # project button panel
 POST_WAIT_LINK   = 15   # waiting for t.me/c/... link
 POST_MANAGE_BTNS = 16   # add-to-post button panel
+ADDING_REACTION_TEXT = 17 # waiting for custom reaction emoji/text
 
 
 
@@ -1781,20 +1782,22 @@ async def reaction_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("❌ Post not found!", show_alert=True)
         return
 
-    if action in ('like', 'dislike'):
-        likes, dislikes, result = await db.handle_reaction(post_id, user_id, action)
-        counts = await db.get_reaction_counts(post_id)
+    if action != 'views':
+        counts, result = await db.handle_reaction(post_id, user_id, action)
         msgs = {
-            ('like',    'added'):   "👍 Liked!",
-            ('like',    'removed'): "👍 Like removed",
-            ('like',    'changed'): "👍 Switched to Like!",
-            ('dislike', 'added'):   "👎 Disliked!",
-            ('dislike', 'removed'): "👎 Dislike removed",
-            ('dislike', 'changed'): "👎 Switched to Dislike!",
+            'added':   f"✅ {action} added!",
+            'removed': f"➖ {action} removed",
+            'changed': f"✅ Switched to {action}!",
         }
-        await q.answer(msgs.get((action, result), "✅"))
+        # Provide better default messages if it's like/dislike
+        if action == 'like':
+            msgs = {'added': "👍 Liked!", 'removed': "👍 Like removed", 'changed': "👍 Switched to Like!"}
+        elif action == 'dislike':
+            msgs = {'added': "👎 Disliked!", 'removed': "👎 Dislike removed", 'changed': "👎 Switched to Dislike!"}
+            
+        await q.answer(msgs.get(result, "✅"))
         buttons = await db.get_post_buttons(post_id)
-        kb = post_keyboard(post_id, buttons, likes, dislikes, counts['views'])
+        kb = post_keyboard(post_id, buttons, counts=counts)
         try:
             if q.inline_message_id:
                 if post['content_type'] == 'text':
@@ -1813,7 +1816,11 @@ async def reaction_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except BadRequest as e:
             if "not modified" not in str(e).lower():
                 logger.warning(f"reaction update: {e}")
-        await refresh_post_keyboard(ctx.bot, post_id, likes, dislikes, counts['views'])
+                
+        # Run the massive refresh in background to prevent lag/blocking
+        import asyncio
+        asyncio.create_task(refresh_post_keyboard(ctx.bot, post_id, counts))
+        
     elif action == 'views':
         counts = await db.get_reaction_counts(post_id)
         await q.answer(f"👁️ {fmt_num(counts['views'])} views", show_alert=True)
@@ -2552,7 +2559,7 @@ async def channel_reaction_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
     except Exception:
         return
 
-    if reaction in ('like', 'dislike'):
+    if reaction != 'views':
         counts = await db.set_channel_user_reaction(channel_id, msg_id, user_id, reaction)
     elif reaction == 'views':
         counts = await db.add_channel_view(channel_id, msg_id, user_id)
@@ -2562,7 +2569,7 @@ async def channel_reaction_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
     uname = await _get_username(ctx.bot)
     kb    = project_post_keyboard(
         channel_id, msg_id, btns,
-        likes=counts['likes'], dislikes=counts['dislikes'], views=counts['views'],
+        counts=counts,
         bot_username=uname
     )
     try:
@@ -2626,6 +2633,7 @@ def build_app() -> Application:
                 MessageHandler(txt(BTN_ADD_LD),    on_add_ld),
                 MessageHandler(txt(BTN_ADD_VIEWS), on_add_views),
                 MessageHandler(txt(BTN_ADD_SHARE), on_add_share),
+                MessageHandler(txt(BTN_ADD_CUSTOM_REACTION), on_add_custom_reaction_init),
                 MessageHandler(txt(BTN_TEMPLATES), on_templates),
                 MessageHandler(txt(BTN_CLEAR),     on_clear_buttons),
                 MessageHandler(txt(BTN_REMOVE_BTN),on_remove_button_init),
@@ -2685,6 +2693,7 @@ def build_app() -> Application:
                 MessageHandler(txt(BTN_ADD_LD),    on_proj_add_ld),
                 MessageHandler(txt(BTN_ADD_VIEWS), on_proj_add_views),
                 MessageHandler(txt(BTN_ADD_SHARE), on_proj_add_share),
+                MessageHandler(txt(BTN_ADD_CUSTOM_REACTION), on_add_custom_reaction_init),
                 MessageHandler(txt(BTN_TEMPLATES), on_proj_templates),
                 MessageHandler(txt(BTN_CLEAR),     on_proj_clear),
                 MessageHandler(txt(BTN_PREVIEW),   on_proj_preview),
@@ -2700,11 +2709,16 @@ def build_app() -> Application:
                 MessageHandler(txt(BTN_ADD_LD),    on_atp_add_ld),
                 MessageHandler(txt(BTN_ADD_VIEWS), on_atp_add_views),
                 MessageHandler(txt(BTN_ADD_SHARE), on_atp_add_share),
+                MessageHandler(txt(BTN_ADD_CUSTOM_REACTION), on_add_custom_reaction_init),
                 MessageHandler(txt(BTN_TEMPLATES), on_proj_templates),  # reuse same template picker
                 MessageHandler(txt(BTN_CLEAR),     on_atp_clear),
                 MessageHandler(txt(BTN_PREVIEW),   on_atp_preview),
                 MessageHandler(txt(BTN_DONE),      on_atp_done),
                 MessageHandler(txt(BTN_CANCEL),    on_cancel_to_menu),
+            ],
+            ADDING_REACTION_TEXT: [
+                MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
+                MessageHandler(filters.TEXT & ~nav_filter, receive_reaction_text),
             ],
         },
         fallbacks=[

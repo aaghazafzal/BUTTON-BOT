@@ -152,15 +152,14 @@ async def send_post(bot: Bot, chat_id: int | str, post_id: int,
 #   UPDATE REACTIONS ON ALL SENT COPIES
 # ─────────────────────────────────────────────────────
 
-async def refresh_post_keyboard(bot: Bot, post_id: int,
-                                 likes: int, dislikes: int, views: int):
+async def refresh_post_keyboard(bot: Bot, post_id: int, counts: dict = None):
     """
     Update the inline keyboard on every sent copy of this post
     (both regular messages and inline-sent messages).
     """
     post     = await db.get_post(post_id)
     buttons  = await db.get_post_buttons(post_id)
-    keyboard = post_keyboard(post_id, buttons, likes, dislikes, views)
+    keyboard = post_keyboard(post_id, buttons, counts=counts)
     sent_list = await db.get_sent_messages(post_id)
 
     for sent in sent_list:

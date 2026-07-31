@@ -305,23 +305,28 @@ async def get_button_count_in_row(post_id: int, row_num: int) -> int:
 #   REACTION OPERATIONS  (post reactions)
 # ══════════════════════════════════════════════════════════
 
-async def handle_reaction(post_id: int, user_id: int, reaction: str) -> tuple[int, int, str]:
+async def handle_reaction(post_id: int, user_id: int, reaction: str) -> tuple[dict, str]:
     """
-    Toggle like/dislike on a post.
-    Returns (new_likes, new_dislikes, action)
+    Toggle a reaction on a post.
+    Returns (counts_dict, action)
     action: 'added' | 'removed' | 'changed'
     """
     existing = await _rxns().find_one({"post_id": post_id, "user_id": user_id})
+
+    # To maintain backward compatibility with old DB entries:
+    def _field(r: str) -> str:
+        if r == "like": return "likes"
+        if r == "dislike": return "dislikes"
+        return r
 
     if existing:
         old = existing["reaction"]
         if old == reaction:
             # Toggle off
             await _rxns().delete_one({"post_id": post_id, "user_id": user_id})
-            dec_field = "likes" if reaction == "like" else "dislikes"
             await _rxc().update_one(
                 {"_id": post_id},
-                {"$inc": {dec_field: -1}},
+                {"$inc": {_field(reaction): -1}},
                 upsert=True
             )
             action = "removed"
@@ -331,11 +336,9 @@ async def handle_reaction(post_id: int, user_id: int, reaction: str) -> tuple[in
                 {"post_id": post_id, "user_id": user_id},
                 {"$set": {"reaction": reaction}}
             )
-            old_field = "likes" if old == "like" else "dislikes"
-            new_field = "likes" if reaction == "like" else "dislikes"
             await _rxc().update_one(
                 {"_id": post_id},
-                {"$inc": {old_field: -1, new_field: 1}},
+                {"$inc": {_field(old): -1, _field(reaction): 1}},
                 upsert=True
             )
             action = "changed"
@@ -347,18 +350,15 @@ async def handle_reaction(post_id: int, user_id: int, reaction: str) -> tuple[in
             "reaction":   reaction,
             "created_at": datetime.now(timezone.utc),
         })
-        inc_field = "likes" if reaction == "like" else "dislikes"
         await _rxc().update_one(
             {"_id": post_id},
-            {"$inc": {inc_field: 1}},
+            {"$inc": {_field(reaction): 1}},
             upsert=True
         )
         action = "added"
 
-    counts = await _rxc().find_one({"_id": post_id}) or {}
-    likes    = max(0, counts.get("likes", 0))
-    dislikes = max(0, counts.get("dislikes", 0))
-    return likes, dislikes, action
+    counts = await get_reaction_counts(post_id)
+    return counts, action
 
 
 async def get_user_reaction(post_id: int, user_id: int) -> str | None:
@@ -378,15 +378,21 @@ async def increment_views(post_id: int) -> int:
 
 
 async def get_reaction_counts(post_id: int) -> dict:
-    doc = await _rxc().find_one({"_id": post_id})
-    if not doc:
-        return {"likes": 0, "dislikes": 0, "views": 0, "shares": 0}
-    return {
-        "likes":    doc.get("likes", 0),
-        "dislikes": doc.get("dislikes", 0),
-        "views":    doc.get("views", 0),
-        "shares":   doc.get("shares", 0),
+    c = await _rxc().find_one({"_id": post_id}) or {}
+    
+    # Ensure likes, dislikes, and views are always present as base keys
+    res = {
+        "likes": max(0, c.get("likes", 0)),
+        "dislikes": max(0, c.get("dislikes", 0)),
+        "views": max(0, c.get("views", 0)),
     }
+    
+    # Include any custom reactions
+    for k, v in c.items():
+        if k not in ("_id", "likes", "dislikes", "views"):
+            res[k] = max(0, v)
+            
+    return res
 
 
 # ══════════════════════════════════════════════════════════
@@ -641,15 +647,20 @@ async def set_channel_user_reaction(channel_id: str, message_id: int,
     })
     existing = existing_doc["reaction"] if existing_doc else None
 
+    # Backward compatibility helper
+    def _field(r: str) -> str:
+        if r == "like": return "likes"
+        if r == "dislike": return "dislikes"
+        return r
+
     if existing == reaction:
         # Toggle off
         await _chureact().delete_one({
             "channel_id": channel_id, "message_id": message_id, "user_id": user_id
         })
-        col = "likes" if reaction == "like" else "dislikes"
         await _chreact().update_one(
             {"channel_id": channel_id, "message_id": message_id},
-            {"$inc": {col: -1}}
+            {"$inc": {_field(reaction): -1}}
         )
     elif existing:
         # Switch reaction
@@ -657,11 +668,9 @@ async def set_channel_user_reaction(channel_id: str, message_id: int,
             {"channel_id": channel_id, "message_id": message_id, "user_id": user_id},
             {"$set": {"reaction": reaction}}
         )
-        old_col = "likes" if existing == "like" else "dislikes"
-        new_col = "likes" if reaction == "like" else "dislikes"
         await _chreact().update_one(
             {"channel_id": channel_id, "message_id": message_id},
-            {"$inc": {old_col: -1, new_col: 1}}
+            {"$inc": {_field(existing): -1, _field(reaction): 1}}
         )
     else:
         # New reaction
@@ -674,14 +683,21 @@ async def set_channel_user_reaction(channel_id: str, message_id: int,
             })
         except Exception:
             pass  # Duplicate — race condition, ignore
-        col = "likes" if reaction == "like" else "dislikes"
         await _chreact().update_one(
             {"channel_id": channel_id, "message_id": message_id},
-            {"$inc": {col: 1}}
+            {"$inc": {_field(reaction): 1}}
         )
 
-    doc = await _chreact().find_one({"channel_id": channel_id, "message_id": message_id})
-    return {"likes": doc.get("likes", 0), "dislikes": doc.get("dislikes", 0), "views": doc.get("views", 0)}
+    doc = await _chreact().find_one({"channel_id": channel_id, "message_id": message_id}) or {}
+    res = {
+        "likes": max(0, doc.get("likes", 0)),
+        "dislikes": max(0, doc.get("dislikes", 0)),
+        "views": max(0, doc.get("views", 0)),
+    }
+    for k, v in doc.items():
+        if k not in ("_id", "likes", "dislikes", "views", "channel_id", "message_id"):
+            res[k] = max(0, v)
+    return res
 
 
 async def add_channel_view(channel_id: str, message_id: int, user_id: int) -> dict:
@@ -710,4 +726,13 @@ async def add_channel_view(channel_id: str, message_id: int, user_id: int) -> di
         # Already viewed — just fetch current counts
         doc = await _chreact().find_one({"channel_id": channel_id, "message_id": message_id})
 
-    return {"likes": doc.get("likes", 0), "dislikes": doc.get("dislikes", 0), "views": doc.get("views", 0)}
+    doc = doc or {}
+    res = {
+        "likes": max(0, doc.get("likes", 0)),
+        "dislikes": max(0, doc.get("dislikes", 0)),
+        "views": max(0, doc.get("views", 0)),
+    }
+    for k, v in doc.items():
+        if k not in ("_id", "likes", "dislikes", "views", "channel_id", "message_id"):
+            res[k] = max(0, v)
+    return res

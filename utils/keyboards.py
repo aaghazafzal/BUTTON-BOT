@@ -28,16 +28,17 @@ BTN_HELP      = "💡 Help"
 BTN_SETTINGS  = "🛠️ Settings"
 BTN_AUTO_ADDER = "💠 Auto Button Adder"
 
-BTN_ADD_URL   = "➕ Add URL Button"
-BTN_ADD_LD    = "👍👎 Add Like / Dislike"
-BTN_ADD_VIEWS = "👁️ Views Counter"
-BTN_ADD_SHARE = "📤 Share Button"
-BTN_TEMPLATES = "⚡ Quick Templates"
-BTN_CLEAR     = "🗑️ Clear All Buttons"
-BTN_PREVIEW   = "👁 Preview Post"
-BTN_DONE      = "✅ DONE"
-BTN_CANCEL    = "❌ CANCEL"
-BTN_REMOVE_BTN  = "➖ Remove Button"
+BTN_ADD_URL      = "➕ Add URL Button"
+BTN_ADD_LD       = "👍👎 Add Like / Dislike"
+BTN_ADD_VIEWS    = "👁️ Views Counter"
+BTN_ADD_SHARE    = "📤 Share Button"
+BTN_ADD_CUSTOM_REACTION = "⭐ Add Reaction"
+BTN_TEMPLATES    = "⚡ Quick Templates"
+BTN_CLEAR        = "🗑️ Clear All Buttons"
+BTN_PREVIEW      = "👁 Preview Post"
+BTN_DONE         = "✅ DONE"
+BTN_CANCEL       = "❌ CANCEL"
+BTN_REMOVE_BTN   = "➖ Remove Button"
 
 TMPL_LD   = "👍👎 Like + Dislike"
 TMPL_LDV  = "👍👎👁️ Like + Dislike + Views"
@@ -153,6 +154,7 @@ def button_panel_reply_kb(existing_types: set, has_buttons: bool = False) -> Rep
         sub.append(KeyboardButton(BTN_ADD_VIEWS, api_kwargs={"style": "primary"}))
     if 'share' not in existing_types:
         sub.append(KeyboardButton(BTN_ADD_SHARE, api_kwargs={"style": "primary"}))
+    sub.append(KeyboardButton(BTN_ADD_CUSTOM_REACTION, api_kwargs={"style": "primary"}))
     if sub:
         rows.append(sub)
     
@@ -193,8 +195,8 @@ def remove_button_reply_kb(buttons: list) -> ReplyKeyboardMarkup:
 def color_reply_kb() -> ReplyKeyboardMarkup:
     """Color picker — each button IS that color."""
     return ReplyKeyboardMarkup([
-        [KeyboardButton("Default")],
         [
+            KeyboardButton("Default"),
             KeyboardButton("Red",   api_kwargs={"style": "danger"}),
             KeyboardButton("Blue",  api_kwargs={"style": "primary"}),
             KeyboardButton("Green", api_kwargs={"style": "success"}),
@@ -243,8 +245,7 @@ def cancel_only_reply_kb() -> ReplyKeyboardMarkup:
 # ═══════════════════════════════════════════════════════════════
 
 def post_keyboard(post_id: int, buttons: list,
-                  likes: int = 0, dislikes: int = 0,
-                  views: int = 0,
+                  counts: dict = None,
                   for_channel: bool = False,
                   bot_username: str = None) -> InlineKeyboardMarkup | None:
     """
@@ -255,9 +256,15 @@ def post_keyboard(post_id: int, buttons: list,
       👎 Dislike → danger  (red)
       👁️ Views  → primary (blue)
       📤 Share   → primary (blue)
+      ⭐ Custom  → primary (blue)
     """
     if not buttons:
         return None
+        
+    counts = counts or {}
+    likes = counts.get('likes', 0)
+    dislikes = counts.get('dislikes', 0)
+    views = counts.get('views', 0)
 
     rows: dict[int, list] = {}
     for btn in buttons:
@@ -301,6 +308,14 @@ def post_keyboard(post_id: int, buttons: list,
                     switch_inline_query=str(post_id),
                     api_kwargs={"style": "primary"}
                 )
+                
+        elif btype == 'custom_reaction':
+            reaction_text = btn['text'].strip()
+            # Truncate if necessary to avoid callback data too large (max 64 bytes total)
+            cb_text = reaction_text[:15]
+            count = counts.get(cb_text, 0)
+            ib = _ib(f"{reaction_text} {count}", cb=f"react|{cb_text}|{post_id}", style="primary")
+            
         else:
             continue
 
@@ -531,7 +546,7 @@ def project_panel_reply_kb(existing_types: set) -> ReplyKeyboardMarkup:
 
 def project_post_keyboard(channel_id: str, message_id: int,
                            buttons: list,
-                           likes: int = 0, dislikes: int = 0, views: int = 0,
+                           counts: dict = None,
                            bot_username: str = None) -> InlineKeyboardMarkup | None:
     """
     Build InlineKeyboardMarkup for auto-added channel post buttons.
@@ -541,6 +556,11 @@ def project_post_keyboard(channel_id: str, message_id: int,
     """
     if not buttons:
         return None
+
+    counts = counts or {}
+    likes = counts.get('likes', 0)
+    dislikes = counts.get('dislikes', 0)
+    views = counts.get('views', 0)
 
     # Build a safe channel_id key (strip -100 prefix for compactness in callback)
     # Keep full ID to avoid ambiguity
@@ -576,6 +596,11 @@ def project_post_keyboard(channel_id: str, message_id: int,
                 ib = InlineKeyboardButton("📤 Share",
                                           switch_inline_query=f"ch_{cid}_{mid}",
                                           api_kwargs={"style": "primary"})
+        elif btype == 'custom_reaction':
+            reaction_text = btn['text'].strip()
+            cb_text = reaction_text[:15]
+            count = counts.get(cb_text, 0)
+            ib = _ib(f"{reaction_text} {count}", cb=f"chreact|{cb_text}|{cid}|{mid}", style="primary")
         else:
             continue
         rows[rn].append(ib)
