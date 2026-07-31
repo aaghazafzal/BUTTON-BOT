@@ -314,7 +314,7 @@ def post_keyboard(post_id: int, buttons: list,
             # Truncate if necessary to avoid callback data too large (max 64 bytes total)
             cb_text = reaction_text[:15]
             count = counts.get(cb_text, 0)
-            ib = _ib(f"{reaction_text} {count}", cb=f"react|{cb_text}|{post_id}", style="primary")
+            ib = _ib(f"{reaction_text} {count}", cb=f"react|{cb_text}|{post_id}", style=style or "primary")
             
         else:
             continue
@@ -600,7 +600,7 @@ def project_post_keyboard(channel_id: str, message_id: int,
             reaction_text = btn['text'].strip()
             cb_text = reaction_text[:15]
             count = counts.get(cb_text, 0)
-            ib = _ib(f"{reaction_text} {count}", cb=f"chreact|{cb_text}|{cid}|{mid}", style="primary")
+            ib = _ib(f"{reaction_text} {count}", cb=f"chreact|{cb_text}|{cid}|{mid}", style=style or "primary")
         else:
             continue
         rows[rn].append(ib)

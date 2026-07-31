@@ -98,9 +98,9 @@ PROJ_WAIT_FWD    = 13   # waiting for forwarded post / @channelname
 PROJ_MANAGE_BTNS = 14   # project button panel
 POST_WAIT_LINK   = 15   # waiting for t.me/c/... link
 POST_MANAGE_BTNS = 16   # add-to-post button panel
-ADDING_REACTION_TEXT = 17 # waiting for custom reaction emoji/text
-
-
+ADDING_REACTION_TEXT  = 17 # waiting for custom reaction emoji/text
+ADDING_REACTION_COLOR = 18 # waiting for custom reaction color
+ADDING_REACTION_ROW   = 19 # waiting for custom reaction row
 
 # ─── Filter helpers ──────────────────────────────────────────────────────────
 
@@ -1004,39 +1004,85 @@ async def receive_reaction_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Keep it short! Max 20 characters. Try again:", reply_markup=cancel_only_reply_kb())
         return ADDING_REACTION_TEXT
         
-    btn_mode = ctx.user_data.get('btn_mode', 'post')
-    
-    if btn_mode == 'post':
-        post_id = ctx.user_data.get('current_post_id')
-        if not post_id: return await on_cancel_to_menu(update, ctx)
-        next_row = await db.get_next_row_for_post(post_id)
-        await db.add_button(post_id, 'custom_reaction', text, row_num=next_row, order_num=0)
-        await _refresh_panel(update, ctx, post_id, f"⭐ '{text}' Added!")
-        return MANAGING_BUTTONS
-        
-    else:
-        key = 'proj_buttons' if btn_mode == 'project' else 'atp_buttons'
-        btns = ctx.user_data.setdefault(key, [])
-        
-        # Calculate next row
-        next_row = 0
-        if btns:
-            next_row = max(b.get('row_num', 0) for b in btns) + 1
-            
+    ctx.user_data['new_btn'] = {'button_type': 'custom_reaction', 'text': text}
+    await update.message.reply_text(
+        "🎨 <b>Choose a color for this reaction button</b>:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=color_reply_kb()
+    )
+    return ADDING_REACTION_COLOR
+
+async def receive_reaction_color(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    label = update.message.text.strip()
+    color = COLOR_LABELS.get(label)
+    if not color:
+        await update.message.reply_text("Please choose a color from the keyboard below 👇")
+        return ADDING_REACTION_COLOR
+
+    ctx.user_data['new_btn']['color'] = color
+    await update.message.reply_text(
+        f"✅ Color: <b>{label}</b>\n\n"
+        "📌 <b>Choose row number</b>:\n"
+        "<i>Buttons in same row appear side by side</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=row_reply_kb()
+    )
+    return ADDING_REACTION_ROW
+
+async def receive_reaction_row(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if not text.isdigit():
+        await update.message.reply_text("Please choose a row number from the keyboard 👇")
+        return ADDING_REACTION_ROW
+
+    row_num   = int(text) - 1  # 0-indexed
+    btn       = ctx.user_data.get('new_btn', {})
+    btn_mode  = ctx.user_data.get('btn_mode', 'post')
+    btn_text  = btn.get('text', 'Reaction')
+    btn_color = btn.get('color', 'default')
+
+    confirm_text = (
+        f"✅ <b>Reaction Added!</b>\n"
+        f"Label: <code>{btn_text}</code>\n"
+        f"Color: <b>{btn_color}</b> | Row: <b>{row_num+1}</b>"
+    )
+
+    if btn_mode == 'project':
+        btns = ctx.user_data.setdefault('proj_buttons', [])
         btns.append({
-            'button_type': 'custom_reaction',
-            'text': text,
-            'row_num': next_row,
-            'order_num': 0
+            'button_type': 'custom_reaction', 'text': btn_text,
+            'color': btn_color, 'row_num': row_num,
+            'order_num': sum(1 for b in btns if b.get('row_num') == row_num)
         })
-        
-        await update.message.reply_text(f"⭐ '{text}' Added!", parse_mode=ParseMode.HTML)
-        if btn_mode == 'project':
-            await _proj_refresh_panel(update, ctx)
-            return PROJ_MANAGE_BTNS
-        else:
-            await _atp_refresh_panel(update, ctx)
-            return POST_MANAGE_BTNS
+        ctx.user_data['new_btn'] = {}
+        await update.message.reply_text(confirm_text, parse_mode=ParseMode.HTML)
+        await _proj_refresh_panel(update, ctx)
+        return PROJ_MANAGE_BTNS
+
+    elif btn_mode == 'add_to_post':
+        btns = ctx.user_data.setdefault('atp_buttons', [])
+        btns.append({
+            'button_type': 'custom_reaction', 'text': btn_text,
+            'color': btn_color, 'row_num': row_num,
+            'order_num': sum(1 for b in btns if b.get('row_num') == row_num)
+        })
+        ctx.user_data['new_btn'] = {}
+        await update.message.reply_text(confirm_text, parse_mode=ParseMode.HTML)
+        await _atp_refresh_panel(update, ctx)
+        return POST_MANAGE_BTNS
+
+    else:
+        post_id   = ctx.user_data['current_post_id']
+        order_num = await db.get_button_count_in_row(post_id, row_num)
+        await db.add_button(
+            post_id=post_id, button_type='custom_reaction',
+            text=btn_text, url=None, color=btn_color,
+            row_num=row_num, order_num=order_num
+        )
+        ctx.user_data['new_btn'] = {}
+        await update.message.reply_text(confirm_text, parse_mode=ParseMode.HTML)
+        await _refresh_panel(update, ctx, post_id)
+        return MANAGING_BUTTONS
 
 
 
@@ -2789,6 +2835,14 @@ def build_app() -> Application:
             ADDING_REACTION_TEXT: [
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
                 MessageHandler(filters.TEXT & ~nav_filter, receive_reaction_text),
+            ],
+            ADDING_REACTION_COLOR: [
+                MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
+                MessageHandler(filters.TEXT & ~nav_filter, receive_reaction_color),
+            ],
+            ADDING_REACTION_ROW: [
+                MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
+                MessageHandler(filters.TEXT & ~nav_filter, receive_reaction_row),
             ],
         },
         fallbacks=[
