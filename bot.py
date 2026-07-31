@@ -203,6 +203,17 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         return MAIN_MENU
 
+    # Parse deep links (e.g. /start post_123)
+    if ctx.args:
+        payload = ctx.args[0]
+        if payload.startswith("post_"):
+            try:
+                post_id = int(payload.split("_")[1])
+                await send_post(ctx.bot, update.effective_chat.id, post_id, track=False)
+                return MAIN_MENU
+            except Exception:
+                pass
+
     await _send_welcome(update.message, ctx, is_message=True)
     await update.message.reply_text(
         "👇 Choose an option from the menu:",

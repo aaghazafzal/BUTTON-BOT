@@ -298,17 +298,18 @@ def post_keyboard(post_id: int, buttons: list,
                      cb=f"react|views|{post_id}", style="primary")
 
         elif btype == 'share':
-            if for_channel and bot_username:
+            share_url = f"https://t.me/{bot_username}?start=post_{post_id}" if bot_username else ""
+            if for_channel and share_url:
                 ib = _ib("📤 Share",
-                         url=f"https://t.me/{bot_username}?startinline={post_id}",
+                         url=f"https://t.me/share/url?url={share_url}&text=Check%20out%20this%20post!",
                          style="primary")
             else:
                 ib = InlineKeyboardButton(
                     "📤 Share",
-                    switch_inline_query=str(post_id),
+                    url=f"https://t.me/share/url?url={share_url}&text=Check%20out%20this%20post!" if share_url else None,
+                    switch_inline_query=str(post_id) if not share_url else None,
                     api_kwargs={"style": "primary"}
                 )
-                
         elif btype == 'custom_reaction':
             reaction_text = btn['text'].strip()
             # Truncate if necessary to avoid callback data too large (max 64 bytes total)
@@ -588,14 +589,11 @@ def project_post_keyboard(channel_id: str, message_id: int,
         elif btype == 'views':
             ib = _ib(f"👁️  {views}", cb=f"chreact|views|{cid}|{mid}", style="primary")
         elif btype == 'share':
-            if bot_username:
-                ib = _ib("📤 Share",
-                         url=f"https://t.me/{bot_username}?startinline=ch_{cid}_{mid}",
-                         style="primary")
-            else:
-                ib = InlineKeyboardButton("📤 Share",
-                                          switch_inline_query=f"ch_{cid}_{mid}",
-                                          api_kwargs={"style": "primary"})
+            clean_cid = str(cid).replace('-100', '')
+            channel_link = f"https://t.me/c/{clean_cid}/{mid}"
+            ib = _ib("📤 Share",
+                     url=f"https://t.me/share/url?url={channel_link}",
+                     style="primary")
         elif btype == 'custom_reaction':
             reaction_text = btn['text'].strip()
             cb_text = reaction_text[:15]
