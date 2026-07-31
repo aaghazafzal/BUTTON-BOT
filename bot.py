@@ -2838,11 +2838,11 @@ def build_app() -> Application:
             ],
             ADDING_REACTION_COLOR: [
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
-                MessageHandler(filters.TEXT & ~nav_filter, receive_reaction_color),
+                MessageHandler(filters.Text(list(COLOR_LABELS.keys())), receive_reaction_color),
             ],
             ADDING_REACTION_ROW: [
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
-                MessageHandler(filters.TEXT & ~nav_filter, receive_reaction_row),
+                MessageHandler(filters.Text([str(i) for i in range(1, 9)]), receive_reaction_row),
             ],
         },
         fallbacks=[
