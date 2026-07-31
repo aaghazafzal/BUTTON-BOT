@@ -970,6 +970,76 @@ async def on_add_share(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return MANAGING_BUTTONS
 
 
+async def on_add_custom_reaction_init(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    btn_mode = ctx.user_data.get('btn_mode', 'post')
+    
+    if btn_mode == 'post':
+        post_id = ctx.user_data.get('current_post_id')
+        if not post_id: return await on_cancel_to_menu(update, ctx)
+        btn_count = len(await db.get_post_buttons(post_id))
+    else:
+        key = 'proj_buttons' if btn_mode == 'project' else 'atp_buttons'
+        btns = ctx.user_data.get(key, [])
+        btn_count = len(btns)
+
+    if btn_count >= MAX_BUTTONS_PER_POST:
+        await update.message.reply_text(f"⚠️ Max {MAX_BUTTONS_PER_POST} buttons per post!")
+        if btn_mode == 'project': return PROJ_MANAGE_BTNS
+        if btn_mode == 'add_to_post': return POST_MANAGE_BTNS
+        return MANAGING_BUTTONS
+
+    await update.message.reply_text(
+        "⭐ <b>Add Custom Reaction</b>\n\n"
+        "Send the emoji or short text you want for this reaction:\n"
+        "<i>e.g., 🔥, ❤️, or 🔥 Fire</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_only_reply_kb()
+    )
+    return ADDING_REACTION_TEXT
+
+
+async def receive_reaction_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if len(text) > 20:
+        await update.message.reply_text("⚠️ Keep it short! Max 20 characters. Try again:", reply_markup=cancel_only_reply_kb())
+        return ADDING_REACTION_TEXT
+        
+    btn_mode = ctx.user_data.get('btn_mode', 'post')
+    
+    if btn_mode == 'post':
+        post_id = ctx.user_data.get('current_post_id')
+        if not post_id: return await on_cancel_to_menu(update, ctx)
+        next_row = await db.get_next_row_for_post(post_id)
+        await db.add_button(post_id, 'custom_reaction', text, row_num=next_row, order_num=0)
+        await _refresh_panel(update, ctx, post_id, f"⭐ '{text}' Added!")
+        return MANAGING_BUTTONS
+        
+    else:
+        key = 'proj_buttons' if btn_mode == 'project' else 'atp_buttons'
+        btns = ctx.user_data.setdefault(key, [])
+        
+        # Calculate next row
+        next_row = 0
+        if btns:
+            next_row = max(b.get('row_num', 0) for b in btns) + 1
+            
+        btns.append({
+            'button_type': 'custom_reaction',
+            'text': text,
+            'row_num': next_row,
+            'order_num': 0
+        })
+        
+        await update.message.reply_text(f"⭐ '{text}' Added!", parse_mode=ParseMode.HTML)
+        if btn_mode == 'project':
+            await _proj_refresh_panel(update, ctx)
+            return PROJ_MANAGE_BTNS
+        else:
+            await _atp_refresh_panel(update, ctx)
+            return POST_MANAGE_BTNS
+
+
+
 async def on_templates(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     post_id = ctx.user_data.get('current_post_id')
     if not post_id:
