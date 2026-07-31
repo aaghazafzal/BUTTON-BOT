@@ -94,7 +94,7 @@ async def send_post(bot: Bot, chat_id: int | str, post_id: int,
     counts  = await db.get_reaction_counts(post_id)
     markup  = extra_markup or post_keyboard(
         post_id, buttons,
-        counts['likes'], counts['dislikes'], counts['views'],
+        counts=counts,
         for_channel=for_channel,
         bot_username=bot.username
     )

@@ -1152,7 +1152,7 @@ async def on_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     post = await db.get_post(post_id)
     buttons = await db.get_post_buttons(post_id)
     counts = await db.get_reaction_counts(post_id)
-    kb = post_keyboard(post_id, buttons, counts['likes'], counts['dislikes'], counts['views'])
+    kb = post_keyboard(post_id, buttons, counts=counts)
     if kb:
         try:
             await send_post(ctx.bot, update.effective_chat.id, post_id, extra_markup=kb, track=False)
@@ -1992,7 +1992,7 @@ async def chosen_inline_result(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # If post has views button, update the counter immediately
     has_views = any(b['button_type'] == 'views' for b in buttons)
     if has_views:
-        kb   = post_keyboard(post_id, buttons, counts['likes'], counts['dislikes'], new_views)
+        kb   = post_keyboard(post_id, buttons, counts={'likes': counts['likes'], 'dislikes': counts['dislikes'], 'views': new_views})
         post = await db.get_post(post_id)
         try:
             if post['content_type'] == 'text':
