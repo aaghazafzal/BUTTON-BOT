@@ -60,7 +60,7 @@ from utils.keyboards import (
     BTN_TEMPLATES, BTN_CLEAR, BTN_PREVIEW, BTN_DONE, BTN_CANCEL,
     TMPL_LD, TMPL_LDV, TMPL_LDS, TMPL_VS, TMPL_S, TMPL_BACK,
     BTN_PROJ_NEW, BTN_PROJ_ADD_POST, BTN_MY_PROJECTS, BTN_BACK_MAIN,
-    COLOR_LABELS,
+    COLOR_LABELS, BTN_REMOVE_BTN, remove_button_reply_kb
 )
 from utils.helpers import (
     send_post, refresh_post_keyboard, extract_content,
@@ -89,14 +89,16 @@ logger = logging.getLogger(__name__)
     WAITING_CHANNEL,    # waiting for channel id
     WAITING_NEW_CHANNEL, # waiting for new channel
     WAITING_CHANNEL_POST_ID,  # waiting for post_id to send to channel
-) = range(11)
+    REMOVING_BUTTON     # selecting button to remove
+) = range(12)
 
 # ─── Auto Button Adder states ────────────────────────────────────────────────
-AUTO_ADDER_HOME  = 11   # auto adder hub menu
-PROJ_WAIT_FWD    = 12   # waiting for forwarded post / @channelname
-PROJ_MANAGE_BTNS = 13   # project button panel
-POST_WAIT_LINK   = 14   # waiting for t.me/c/... link
-POST_MANAGE_BTNS = 15   # add-to-post button panel
+AUTO_ADDER_HOME  = 12   # auto adder hub menu
+PROJ_WAIT_FWD    = 13   # waiting for forwarded post / @channelname
+PROJ_MANAGE_BTNS = 14   # project button panel
+POST_WAIT_LINK   = 15   # waiting for t.me/c/... link
+POST_MANAGE_BTNS = 16   # add-to-post button panel
+
 
 
 # ─── Filter helpers ──────────────────────────────────────────────────────────
@@ -880,7 +882,7 @@ async def receive_content(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"<b>Type:</b> {content_type.upper()}\n\n"
         "Now choose what buttons to add 👇",
         parse_mode=ParseMode.HTML,
-        reply_markup=button_panel_reply_kb(existing_types)
+        reply_markup=button_panel_reply_kb(existing_types, has_buttons=False)
     )
     return MANAGING_BUTTONS
 
@@ -898,7 +900,7 @@ async def _refresh_panel(update, ctx, post_id, extra_msg=""):
         f"Buttons: <b>{btn_count}</b>{(' | ' + extra_msg) if extra_msg else ''}\n\n"
         "Choose what to do 👇",
         parse_mode=ParseMode.HTML,
-        reply_markup=button_panel_reply_kb(existing_types)
+        reply_markup=button_panel_reply_kb(existing_types, has_buttons=btn_count > 0)
     )
 
 
@@ -910,7 +912,7 @@ async def on_add_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if btn_count >= MAX_BUTTONS_PER_POST:
         await update.message.reply_text(
             f"⚠️ Max {MAX_BUTTONS_PER_POST} buttons per post!",
-            reply_markup=button_panel_reply_kb(set())
+            reply_markup=button_panel_reply_kb(set(), has_buttons=btn_count > 0)
         )
         return MANAGING_BUTTONS
     ctx.user_data['new_btn'] = {}
@@ -986,6 +988,60 @@ async def on_clear_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await db.clear_post_buttons(post_id)
     await _refresh_panel(update, ctx, post_id, "🗑️ All cleared!")
     return MANAGING_BUTTONS
+
+
+async def on_remove_button_init(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    post_id = ctx.user_data.get('current_post_id')
+    if not post_id:
+        return await on_cancel_to_menu(update, ctx)
+    buttons = await db.get_post_buttons(post_id)
+    if not buttons:
+        await update.message.reply_text("This post doesn't have any buttons to remove.")
+        return MANAGING_BUTTONS
+        
+    await update.message.reply_text(
+        "➖ <b>Remove a Button</b>\n\n"
+        "Select the button you want to remove below.\n"
+        "⚠️ <i>Warning: This action cannot be reversed.</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=remove_button_reply_kb(buttons)
+    )
+    return REMOVING_BUTTON
+
+
+async def receive_button_to_remove(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    post_id = ctx.user_data.get('current_post_id')
+    if not post_id:
+        return await on_cancel_to_menu(update, ctx)
+    
+    selected_text = update.message.text
+    buttons = await db.get_post_buttons(post_id)
+    
+    # Find the button to remove
+    target_idx = -1
+    for i, btn in enumerate(buttons):
+        if btn.get('text') == selected_text:
+            target_idx = i
+            break
+            
+    if target_idx == -1:
+        await update.message.reply_text(
+            "⚠️ Button not found. Please select a valid button from the menu below, or CANCEL.",
+            reply_markup=remove_button_reply_kb(buttons)
+        )
+        return REMOVING_BUTTON
+        
+    # Remove it from the database list
+    removed_btn = buttons.pop(target_idx)
+    await db.update_post_buttons(post_id, buttons)
+    
+    # If the button was a reaction or share button, we also need to clear its state
+    # Wait, the bot automatically computes existing_types based on what's in the button array? 
+    # Let's see... `has_reaction_buttons` scans the array. So removing from DB array is enough!
+    
+    await _refresh_panel(update, ctx, post_id, f"➖ Removed '{selected_text}'")
+    return MANAGING_BUTTONS
+
 
 
 async def on_preview(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1664,7 +1720,7 @@ async def edit_buttons_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Current buttons: <b>{btn_count}</b>\n\n"
         "Choose what to do 👇",
         parse_mode=ParseMode.HTML,
-        reply_markup=button_panel_reply_kb(existing_types)
+        reply_markup=button_panel_reply_kb(existing_types, has_buttons=btn_count > 0)
     )
     return MANAGING_BUTTONS
 
@@ -2564,6 +2620,7 @@ def build_app() -> Application:
                 MessageHandler(txt(BTN_ADD_SHARE), on_add_share),
                 MessageHandler(txt(BTN_TEMPLATES), on_templates),
                 MessageHandler(txt(BTN_CLEAR),     on_clear_buttons),
+                MessageHandler(txt(BTN_REMOVE_BTN),on_remove_button_init),
                 MessageHandler(txt(BTN_PREVIEW),   on_preview),
                 MessageHandler(txt(BTN_DONE),      on_done),
                 MessageHandler(txt(BTN_CANCEL),    on_cancel_to_menu),
@@ -2589,6 +2646,10 @@ def build_app() -> Application:
                     filters.Text([TMPL_LD, TMPL_LDV, TMPL_LDS, TMPL_VS, TMPL_S, TMPL_BACK, BTN_CANCEL]),
                     on_template_pick
                 ),
+            ],
+            REMOVING_BUTTON: [
+                MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
+                MessageHandler(filters.TEXT & ~nav_filter, receive_button_to_remove),
             ],
             WAITING_NEW_CHANNEL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_channel)

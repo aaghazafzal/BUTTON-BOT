@@ -37,6 +37,7 @@ BTN_CLEAR     = "🗑️ Clear All Buttons"
 BTN_PREVIEW   = "👁 Preview Post"
 BTN_DONE      = "✅ DONE"
 BTN_CANCEL    = "❌ CANCEL"
+BTN_REMOVE_BTN  = "➖ Remove Button"
 
 TMPL_LD   = "👍👎 Like + Dislike"
 TMPL_LDV  = "👍👎👁️ Like + Dislike + Views"
@@ -126,7 +127,7 @@ def main_menu_reply_kb() -> ReplyKeyboardMarkup:
     ], resize_keyboard=True)
 
 
-def button_panel_reply_kb(existing_types: set) -> ReplyKeyboardMarkup:
+def button_panel_reply_kb(existing_types: set, has_buttons: bool = False) -> ReplyKeyboardMarkup:
     """
     Button panel — color scheme:
       Add URL    → blue  (add action)
@@ -134,6 +135,7 @@ def button_panel_reply_kb(existing_types: set) -> ReplyKeyboardMarkup:
       Views      → blue  (add action)
       Share      → blue  (add action)
       Templates  → blue  (shortcut)
+      Remove Btn → red   (destructive)
       Clear      → red   (destructive)
       Preview    → blue  (info)
       DONE       → green (confirm)
@@ -153,16 +155,35 @@ def button_panel_reply_kb(existing_types: set) -> ReplyKeyboardMarkup:
         sub.append(KeyboardButton(BTN_ADD_SHARE, api_kwargs={"style": "primary"}))
     if sub:
         rows.append(sub)
+    
+    if has_buttons:
+        rows.append([
+            KeyboardButton(BTN_TEMPLATES,  api_kwargs={"style": "primary"}),
+            KeyboardButton(BTN_REMOVE_BTN, api_kwargs={"style": "danger"}),
+            KeyboardButton(BTN_CLEAR,      api_kwargs={"style": "danger"}),
+        ])
+    else:
+        rows.append([
+            KeyboardButton(BTN_TEMPLATES, api_kwargs={"style": "primary"}),
+            KeyboardButton(BTN_CLEAR,     api_kwargs={"style": "danger"}),
+        ])
 
-    rows.append([
-        KeyboardButton(BTN_TEMPLATES, api_kwargs={"style": "primary"}),
-        KeyboardButton(BTN_CLEAR,     api_kwargs={"style": "danger"}),
-    ])
     rows.append([KeyboardButton(BTN_PREVIEW, api_kwargs={"style": "primary"})])
     rows.append([
         KeyboardButton(BTN_DONE,   api_kwargs={"style": "success"}),
         KeyboardButton(BTN_CANCEL, api_kwargs={"style": "danger"}),
     ])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+def remove_button_reply_kb(buttons: list) -> ReplyKeyboardMarkup:
+    """Keyboard to select a specific button to remove."""
+    rows = []
+    for btn in buttons:
+        # Each btn is a dict with 'text'
+        btn_text = btn.get('text', 'Unknown Button')
+        rows.append([KeyboardButton(btn_text)])
+    
+    rows.append([KeyboardButton(BTN_CANCEL, api_kwargs={"style": "danger"})])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
