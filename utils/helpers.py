@@ -257,7 +257,7 @@ async def build_inline_result(post: dict, buttons: list, counts: dict, bot_usern
 
     keyboard = post_keyboard(
         post_id, buttons,
-        counts['likes'], counts['dislikes'], counts['views'],
+        counts=counts,
         for_channel=False,  # inline mode is always from personal chats
         bot_username=bot_username
     )
