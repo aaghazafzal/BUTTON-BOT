@@ -1156,12 +1156,21 @@ async def on_clear_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def on_remove_button_init(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    post_id = ctx.user_data.get('current_post_id')
-    if not post_id:
-        return await on_cancel_to_menu(update, ctx)
-    buttons = await db.get_post_buttons(post_id)
+    btn_mode = ctx.user_data.get('btn_mode', 'post')
+    if btn_mode == 'project':
+        buttons = ctx.user_data.get('proj_buttons', [])
+    elif btn_mode == 'add_to_post':
+        buttons = ctx.user_data.get('atp_buttons', [])
+    else:
+        post_id = ctx.user_data.get('current_post_id')
+        if not post_id:
+            return await on_cancel_to_menu(update, ctx)
+        buttons = await db.get_post_buttons(post_id)
+
     if not buttons:
         await update.message.reply_text("This post doesn't have any buttons to remove.")
+        if btn_mode == 'project': return PROJ_MANAGE_BTNS
+        if btn_mode == 'add_to_post': return POST_MANAGE_BTNS
         return MANAGING_BUTTONS
         
     await update.message.reply_text(
@@ -1175,12 +1184,18 @@ async def on_remove_button_init(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def receive_button_to_remove(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    post_id = ctx.user_data.get('current_post_id')
-    if not post_id:
-        return await on_cancel_to_menu(update, ctx)
+    btn_mode = ctx.user_data.get('btn_mode', 'post')
+    if btn_mode == 'project':
+        buttons = ctx.user_data.get('proj_buttons', [])
+    elif btn_mode == 'add_to_post':
+        buttons = ctx.user_data.get('atp_buttons', [])
+    else:
+        post_id = ctx.user_data.get('current_post_id')
+        if not post_id:
+            return await on_cancel_to_menu(update, ctx)
+        buttons = await db.get_post_buttons(post_id)
     
     selected_text = update.message.text
-    buttons = await db.get_post_buttons(post_id)
     
     # Find the button to remove
     target_idx = -1
@@ -1196,19 +1211,34 @@ async def receive_button_to_remove(update: Update, ctx: ContextTypes.DEFAULT_TYP
         )
         return REMOVING_BUTTON
         
-    # Remove it from the database
+    # Remove it from the database / state
     removed_btn = buttons.pop(target_idx)
-    await db.delete_button(removed_btn['_id'])
     
-    # If the button was a reaction or share button, we also need to clear its state
-    # Wait, the bot automatically computes existing_types based on what's in the button array? 
-    # Let's see... `has_reaction_buttons` scans the array. So removing from DB array is enough!
-    
-    await _refresh_panel(update, ctx, post_id, f"➖ Removed '{selected_text}'")
-    return MANAGING_BUTTONS
+    if btn_mode == 'post':
+        await db.delete_button(removed_btn['_id'])
+        await _refresh_panel(update, ctx, ctx.user_data['current_post_id'], f"➖ Removed '{selected_text}'")
+        return MANAGING_BUTTONS
+    elif btn_mode == 'project':
+        await update.message.reply_text(f"➖ Removed '{selected_text}'")
+        await _proj_refresh_panel(update, ctx)
+        return PROJ_MANAGE_BTNS
+    elif btn_mode == 'add_to_post':
+        await update.message.reply_text(f"➖ Removed '{selected_text}'")
+        await _atp_refresh_panel(update, ctx)
+        return POST_MANAGE_BTNS
 
 
 async def on_back_to_manage(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    btn_mode = ctx.user_data.get('btn_mode', 'post')
+    if btn_mode == 'project':
+        await update.message.reply_text("🔙 Cancelled removal.")
+        await _proj_refresh_panel(update, ctx)
+        return PROJ_MANAGE_BTNS
+    elif btn_mode == 'add_to_post':
+        await update.message.reply_text("🔙 Cancelled removal.")
+        await _atp_refresh_panel(update, ctx)
+        return POST_MANAGE_BTNS
+        
     post_id = ctx.user_data.get('current_post_id')
     if not post_id:
         return await on_cancel_to_menu(update, ctx)
@@ -2243,6 +2273,8 @@ async def receive_proj_forward(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data['proj_channel_title'] = channel_title
     ctx.user_data['proj_buttons']       = []
 
+    ctx.user_data['btn_mode']           = 'project'
+
     existing_types = _proj_existing_types(ctx)
     await msg.reply_text(
         f"✅ <b>Channel detected: {channel_title}</b>\n\n"
@@ -2467,6 +2499,8 @@ async def receive_post_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data['atp_channel_title'] = channel_title
     ctx.user_data['atp_msg_id']        = msg_id
     ctx.user_data['atp_buttons']       = []
+
+    ctx.user_data['btn_mode']          = 'add_to_post'
 
     await update.message.reply_text(
         f"✅ <b>Post found!</b>\n\n"
@@ -2914,6 +2948,7 @@ def build_app() -> Application:
                 MessageHandler(txt(BTN_ADD_SHARE), on_proj_add_share),
                 MessageHandler(txt(BTN_ADD_CUSTOM_REACTION), on_add_custom_reaction_init),
                 MessageHandler(txt(BTN_TEMPLATES), on_proj_templates),
+                MessageHandler(txt(BTN_REMOVE_BTN),on_remove_button_init),
                 MessageHandler(txt(BTN_CLEAR),     on_proj_clear),
                 MessageHandler(txt(BTN_PREVIEW),   on_proj_preview),
                 MessageHandler(txt(BTN_DONE),      on_proj_done),
@@ -2930,6 +2965,7 @@ def build_app() -> Application:
                 MessageHandler(txt(BTN_ADD_SHARE), on_atp_add_share),
                 MessageHandler(txt(BTN_ADD_CUSTOM_REACTION), on_add_custom_reaction_init),
                 MessageHandler(txt(BTN_TEMPLATES), on_proj_templates),  # reuse same template picker
+                MessageHandler(txt(BTN_REMOVE_BTN),on_remove_button_init),
                 MessageHandler(txt(BTN_CLEAR),     on_atp_clear),
                 MessageHandler(txt(BTN_PREVIEW),   on_atp_preview),
                 MessageHandler(txt(BTN_DONE),      on_atp_done),

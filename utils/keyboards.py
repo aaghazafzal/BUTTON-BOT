@@ -533,12 +533,22 @@ def project_panel_reply_kb(existing_types: set) -> ReplyKeyboardMarkup:
         sub.append(KeyboardButton(BTN_ADD_VIEWS, api_kwargs={"style": "primary"}))
     if 'share' not in existing_types:
         sub.append(KeyboardButton(BTN_ADD_SHARE, api_kwargs={"style": "primary"}))
+    sub.append(KeyboardButton(BTN_ADD_CUSTOM_REACTION, api_kwargs={"style": "primary"}))
     if sub:
         rows.append(sub)
-    rows.append([
-        KeyboardButton(BTN_TEMPLATES, api_kwargs={"style": "primary"}),
-        KeyboardButton(BTN_CLEAR,     api_kwargs={"style": "danger"}),
-    ])
+    
+    if len(existing_types) > 0:
+        rows.append([
+            KeyboardButton(BTN_TEMPLATES,  api_kwargs={"style": "primary"}),
+            KeyboardButton(BTN_REMOVE_BTN, api_kwargs={"style": "danger"}),
+            KeyboardButton(BTN_CLEAR,      api_kwargs={"style": "danger"}),
+        ])
+    else:
+        rows.append([
+            KeyboardButton(BTN_TEMPLATES, api_kwargs={"style": "primary"}),
+            KeyboardButton(BTN_CLEAR,     api_kwargs={"style": "danger"}),
+        ])
+
     rows.append([KeyboardButton(BTN_PREVIEW, api_kwargs={"style": "primary"})])
     rows.append([
         KeyboardButton(BTN_DONE,   api_kwargs={"style": "success"}),
