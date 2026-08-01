@@ -94,14 +94,14 @@ logger = logging.getLogger(__name__)
 ) = range(13)
 
 # ─── Auto Button Adder states ────────────────────────────────────────────────
-AUTO_ADDER_HOME  = 12   # auto adder hub menu
-PROJ_WAIT_FWD    = 13   # waiting for forwarded post / @channelname
-PROJ_MANAGE_BTNS = 14   # project button panel
-POST_WAIT_LINK   = 15   # waiting for t.me/c/... link
-POST_MANAGE_BTNS = 16   # add-to-post button panel
-ADDING_REACTION_TEXT  = 17 # waiting for custom reaction emoji/text
-ADDING_REACTION_COLOR = 18 # waiting for custom reaction color
-ADDING_REACTION_ROW   = 19 # waiting for custom reaction row
+AUTO_ADDER_HOME  = 13   # auto adder hub menu
+PROJ_WAIT_FWD    = 14   # waiting for forwarded post / @channelname
+PROJ_MANAGE_BTNS = 15   # project button panel
+POST_WAIT_LINK   = 16   # waiting for t.me/c/... link
+POST_MANAGE_BTNS = 17   # add-to-post button panel
+ADDING_REACTION_TEXT  = 18 # waiting for custom reaction emoji/text
+ADDING_REACTION_COLOR = 19 # waiting for custom reaction color
+ADDING_REACTION_ROW   = 20 # waiting for custom reaction row
 
 # ─── Filter helpers ──────────────────────────────────────────────────────────
 
