@@ -340,7 +340,9 @@ def post_list_inline_kb(posts: list, page: int = 0,
 
     rows = []
     for p in page_posts:
-        label = f"#{p['id']}  {p['content_type'].upper()}  👍{p.get('likes',0)} 👎{p.get('dislikes',0)}"
+        title = p.get('title')
+        name_str = f" {title}" if title else f" {p['content_type'].upper()}"
+        label = f"#{p['id']}{name_str}  👍{p.get('likes',0)} 👎{p.get('dislikes',0)}"
         rows.append([_ib(label, cb=f"postmenu|{p['id']}", style="primary")])
 
     nav = []

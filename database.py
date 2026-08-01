@@ -168,7 +168,7 @@ async def count_today_users() -> int:
 # ══════════════════════════════════════════════════════════
 
 async def create_post(user_id: int, content_type: str, content: str,
-                      caption: str = None) -> int:
+                      caption: str = None, title: str = None) -> int:
     """Create a new post. Returns integer post_id."""
     post_id = await _next_id("posts")
     now = datetime.now(timezone.utc)
@@ -178,6 +178,7 @@ async def create_post(user_id: int, content_type: str, content: str,
         "content_type": content_type,
         "content":      content,
         "caption":      caption,
+        "title":        title,
         "parse_mode":   "HTML",
         "created_at":   now,
         "updated_at":   now,

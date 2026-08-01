@@ -89,8 +89,9 @@ logger = logging.getLogger(__name__)
     WAITING_CHANNEL,    # waiting for channel id
     WAITING_NEW_CHANNEL, # waiting for new channel
     WAITING_CHANNEL_POST_ID,  # waiting for post_id to send to channel
-    REMOVING_BUTTON     # selecting button to remove
-) = range(12)
+    REMOVING_BUTTON,    # selecting button to remove
+    WAITING_POST_TITLE  # waiting for optional post title
+) = range(13)
 
 # ─── Auto Button Adder states ────────────────────────────────────────────────
 AUTO_ADDER_HOME  = 12   # auto adder hub menu
@@ -876,22 +877,58 @@ async def on_cancel_to_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def receive_content(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """WAITING_CONTENT: User sent post content."""
     msg = update.message
-    user_id = update.effective_user.id
 
     content_type, content, caption = extract_content(msg)
     if not content_type:
         await msg.reply_text("❌ Unsupported content. Send text, photo, video, document, etc.")
         return WAITING_CONTENT
 
-    post_id = await db.create_post(user_id, content_type, content, caption)
+    ctx.user_data['draft_post'] = {
+        'type': content_type,
+        'content': content,
+        'caption': caption
+    }
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏭️ Skip", callback_data="skip_title")]
+    ])
+    await msg.reply_text(
+        "📝 <b>Post Name</b>\n\n"
+        "Send a custom name for this post (this makes it easier to find in My Posts).\n\n"
+        "<i>Or click Skip to use the default name.</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    return WAITING_POST_TITLE
+
+
+async def receive_post_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """WAITING_POST_TITLE: User sends a title or clicks skip."""
+    user_id = update.effective_user.id
+    draft = ctx.user_data.get('draft_post')
+    if not draft:
+        await (update.message or update.callback_query.message).reply_text("❌ Session expired. Please try again.")
+        return MAIN_MENU
+
+    title = None
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.edit_text("⏭️ <i>Skipped naming</i>", parse_mode=ParseMode.HTML)
+    elif update.message:
+        title = update.message.text.strip()
+        
+    post_id = await db.create_post(user_id, draft['type'], draft['content'], draft['caption'], title=title)
     ctx.user_data['current_post_id'] = post_id
+    ctx.user_data.pop('draft_post', None)
 
     existing = await db.has_reaction_buttons(post_id)
     existing_types = {k for k, v in existing.items() if v}
 
+    msg = update.message or update.callback_query.message
     await msg.reply_text(
         f"✅ <b>Post #{post_id} created!</b>\n\n"
-        f"<b>Type:</b> {content_type.upper()}\n\n"
+        f"<b>Type:</b> {draft['type'].upper()}\n"
+        f"{f'<b>Name:</b> {title}' if title else ''}\n\n"
         "Now choose what buttons to add 👇",
         parse_mode=ParseMode.HTML,
         reply_markup=button_panel_reply_kb(existing_types, has_buttons=False)
@@ -2851,6 +2888,11 @@ def build_app() -> Application:
             WAITING_CHANNEL_POST_ID: [
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
                 MessageHandler(filters.Regex(r'^\d+$'), receive_channel_post_id),
+            ],
+            WAITING_POST_TITLE: [
+                MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
+                CallbackQueryHandler(receive_post_title, pattern=r"^skip_title$"),
+                MessageHandler(filters.TEXT & ~nav_filter, receive_post_title),
             ],
             # ─── Auto Button Adder states ─────────────────────────
             AUTO_ADDER_HOME: [

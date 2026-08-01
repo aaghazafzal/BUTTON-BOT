@@ -273,7 +273,7 @@ async def build_inline_result(post: dict, buttons: list, counts: dict, bot_usern
         preview = content[:80] + ('…' if len(content) > 80 else '')
         return InlineQueryResultArticle(
             id=str(post_id),
-            title=f"{emoji} Post #{post_id}",
+            title=f"{emoji} {post.get('title') or f'Post #{post_id}'}",
             description=f"{preview}\n{stats}",
             input_message_content=InputTextMessageContent(
                 message_text=content,
@@ -287,7 +287,7 @@ async def build_inline_result(post: dict, buttons: list, counts: dict, bot_usern
         return InlineQueryResultCachedPhoto(
             id=str(post_id),
             photo_file_id=content,
-            title=f"{emoji} Photo Post #{post_id}",
+            title=f"{emoji} {post.get('title') or f'Photo Post #{post_id}'}",
             description=f"{caption[:80] or 'Photo'}\n{stats}",
             caption=caption or None,
             parse_mode=ParseMode.HTML if caption else None,
@@ -299,7 +299,7 @@ async def build_inline_result(post: dict, buttons: list, counts: dict, bot_usern
         return InlineQueryResultCachedVideo(
             id=str(post_id),
             video_file_id=content,
-            title=f"{emoji} Video Post #{post_id}",
+            title=f"{emoji} {post.get('title') or f'Video Post #{post_id}'}",
             description=f"{caption[:80] or 'Video'}\n{stats}",
             caption=caption or None,
             parse_mode=ParseMode.HTML if caption else None,
@@ -311,7 +311,7 @@ async def build_inline_result(post: dict, buttons: list, counts: dict, bot_usern
         return InlineQueryResultCachedDocument(
             id=str(post_id),
             document_file_id=content,
-            title=f"{emoji} Document Post #{post_id}",
+            title=f"{emoji} {post.get('title') or f'Document Post #{post_id}'}",
             description=f"{caption[:80] or 'Document'}\n{stats}",
             caption=caption or None,
             parse_mode=ParseMode.HTML if caption else None,
@@ -323,7 +323,7 @@ async def build_inline_result(post: dict, buttons: list, counts: dict, bot_usern
         return InlineQueryResultCachedGif(
             id=str(post_id),
             gif_file_id=content,
-            title=f"{emoji} GIF Post #{post_id}",
+            title=f"{emoji} {post.get('title') or f'GIF Post #{post_id}'}",
             caption=caption or None,
             parse_mode=ParseMode.HTML if caption else None,
             reply_markup=keyboard
@@ -344,7 +344,7 @@ async def build_inline_result(post: dict, buttons: list, counts: dict, bot_usern
         return InlineQueryResultCachedVoice(
             id=str(post_id),
             voice_file_id=content,
-            title=f"{emoji} Voice Post #{post_id}",
+            title=f"{emoji} {post.get('title') or f'Voice Post #{post_id}'}",
             caption=caption or None,
             parse_mode=ParseMode.HTML if caption else None,
             reply_markup=keyboard
@@ -362,11 +362,11 @@ async def build_inline_result(post: dict, buttons: list, counts: dict, bot_usern
     else:
         return InlineQueryResultArticle(
             id=str(post_id),
-            title=f"{emoji} Post #{post_id} ({ct.upper()})",
+            title=f"{emoji} {post.get('title') or f'Post #{post_id} ({ct.upper()})'}",
             description=f"{caption[:80] or ct}\n{stats}",
             input_message_content=InputTextMessageContent(
                 message_text=(
-                    f"<b>{emoji} Post #{post_id}</b>\n"
+                    f"<b>{emoji} {post.get('title') or f'Post #{post_id}'}</b>\n"
                     f"{caption or f'[{ct.upper()} post]'}"
                 ),
                 parse_mode=ParseMode.HTML
