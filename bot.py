@@ -35,10 +35,10 @@ from telegram.error import TelegramError, BadRequest, Forbidden
 import database as db
 from config import (
     BOT_TOKEN, WELCOME_TEXT, HELP_DICT, BOT_NAME,
-    MAX_POSTS_PER_USER, MAX_BUTTONS_PER_POST,
+    MAX_BUTTONS_PER_ROW,
     FORCE_JOIN_CHANNEL, FORCE_JOIN_CHANNEL_URL, WEBSITE_URL,
     START_LOGO_PATH, FORCE_JOIN_TEXT, HELP_LOGO_PATH,
-    OWNER_IDS,
+    OWNER_IDS, PLAN_PRICE, ADMIN_CONTACT_URL,
 )
 from utils.keyboards import (
     # Reply keyboards
@@ -55,7 +55,7 @@ from utils.keyboards import (
     settings_inline_kb, user_stats_inline_kb,
     # Button text constants
     BTN_CREATE, BTN_MYPOSTS, BTN_CHANNEL, BTN_STATS, BTN_HELP, BTN_SETTINGS,
-    BTN_AUTO_ADDER,
+    BTN_AUTO_ADDER, BTN_PLAN,
     BTN_ADD_URL, BTN_ADD_LD, BTN_ADD_VIEWS, BTN_ADD_SHARE, BTN_ADD_CUSTOM_REACTION,
     BTN_TEMPLATES, BTN_CLEAR, BTN_PREVIEW, BTN_DONE, BTN_CANCEL,
     TMPL_LD, TMPL_LDV, TMPL_LDS, TMPL_VS, TMPL_S, TMPL_BACK,
@@ -65,11 +65,6 @@ from utils.keyboards import (
 from utils.helpers import (
     send_post, refresh_post_keyboard, extract_content,
     is_valid_url, build_preview_caption, build_inline_result, fmt_num,
-)
-
-logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
@@ -536,11 +531,12 @@ async def on_create_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """User clicked 📝 Create Post"""
     await delete_preview(update, ctx)
     user_id = update.effective_user.id
-    count = await db.count_user_posts(user_id)
-    if count >= MAX_POSTS_PER_USER:
+    limits = await db.get_user_limits(user_id)
+    count = limits["total_posts"]
+    if count >= limits["max_posts"]:
         await update.message.reply_text(
-            f"⚠️ You've reached the limit of <b>{MAX_POSTS_PER_USER}</b> posts.\n"
-            "Delete some old posts first with /mypost",
+            f"⚠️ You've reached the limit of <b>{limits['max_posts']}</b> posts.\n"
+            "Delete some old posts first with /mypost, or upgrade your plan.",
             parse_mode=ParseMode.HTML,
             reply_markup=main_menu_reply_kb()
         )
@@ -616,6 +612,78 @@ async def on_send_channel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply_markup=kb
     )
     return MAIN_MENU
+
+
+# ═══════════════════════════════════════════════════════
+#   PLAN & UPGRADE
+# ═══════════════════════════════════════════════════════
+
+async def on_plan(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """User clicked 💎 Plan"""
+    await delete_preview(update, ctx)
+    user_id = update.effective_user.id
+    limits = await db.get_user_limits(user_id)
+    
+    plan_name = "💎 Premium Plan" if limits["is_premium_active"] or limits["is_admin"] else "🆓 Free Plan"
+    expiry = limits["premium_expiry"].strftime('%Y-%m-%d %H:%M UTC') if limits.get("premium_expiry") else "Never"
+    
+    text = (
+        "╔══════════════════════════════════════╗\n"
+        f"║      {plan_name.upper():^32}      ║\n"
+        "╚══════════════════════════════════════╝\n\n"
+        "<b>📦 Your Current Limits:</b>\n"
+        f"┣ 📝 <b>Posts:</b> {limits['total_posts']} / {limits['max_posts']}\n"
+        f"┣ 🔘 <b>Buttons per Post:</b> {limits['max_buttons']}\n"
+        f"┗ ⚡ <b>Auto Adder Projects:</b> {limits['active_projects']} / {limits['max_projects']}\n\n"
+        f"<b>⏳ Premium Expiry:</b> {expiry}\n\n"
+        "━━━━━━  <b>UPGRADE PLAN</b>  ━━━━━━\n"
+        "<b>Get Premium features:</b>\n"
+        "✅ <b>+200 Posts permanently</b>\n"
+        "✅ <b>40 Buttons per post (1 Month)</b>\n"
+        "✅ <b>5 Auto Adder Projects (1 Month)</b>\n\n"
+        f"<b>Price:</b> {PLAN_PRICE} per upgrade\n\n"
+        f"To upgrade, please contact the admin and pay {PLAN_PRICE}."
+    )
+    
+    # Inline button to contact admin
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💬 Contact Admin to Upgrade", url=ADMIN_CONTACT_URL)]
+    ])
+    
+    await update.message.reply_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    return MAIN_MENU
+
+async def cmd_grant_premium(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Admin command to grant premium to a user. /grantpremium <user_id>"""
+    user_id = update.effective_user.id
+    if user_id not in OWNER_IDS:
+        return
+        
+    args = ctx.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("Usage: /grantpremium <user_id>")
+        return
+        
+    target_id = int(args[0])
+    success = await db.grant_premium(target_id)
+    
+    if success:
+        await update.message.reply_text(f"✅ Successfully granted premium to {target_id} (+200 posts, +30 days features).")
+        try:
+            await ctx.bot.send_message(
+                chat_id=target_id,
+                text="🎉 <b>Congratulations!</b> Your Premium Plan has been activated/extended!\n\nYou got <b>+200 Posts</b> and 1 Month of Premium features.",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            await update.message.reply_text("⚠️ Could not notify the user (they might have blocked the bot).")
+    else:
+        await update.message.reply_text("❌ Failed. User not found in database.")
 
 
 async def on_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -782,9 +850,10 @@ async def on_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uname    = await _get_username(ctx.bot)
     posts    = await db.get_user_posts(user_id)
     channels = await db.get_user_channels(user_id)
+    limits   = await db.get_user_limits(user_id)
     used_posts = len(posts)
     used_chan  = len(channels)
-    pct = (used_posts / MAX_POSTS_PER_USER) * 10
+    pct = (used_posts / limits["max_posts"]) * 10 if limits["max_posts"] > 0 else 0
     filled = int(pct)
     posts_bar = '█' * filled + '░' * (10 - filled)
 
@@ -798,7 +867,7 @@ async def on_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"   <b>Network:</b>  <a href='https://univora.website'>Univora Platform</a> 🌐\n\n"
 
         "━━━━━━  📊  <b>YOUR USAGE</b>  ━━━━━━\n"
-        f"   <b>Posts Created:</b>  <b>{used_posts}</b> / {MAX_POSTS_PER_USER}\n"
+        f"   <b>Posts Created:</b>  <b>{used_posts}</b> / {limits['max_posts']}\n"
         f"   <code>[{posts_bar}]</code>\n"
         f"   <b>Saved Channels:</b>  <b>{used_chan}</b> channels"
     )
@@ -822,10 +891,11 @@ async def settings_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
     uname    = await _get_username(ctx.bot)
     posts    = await db.get_user_posts(user_id)
     channels = await db.get_user_channels(user_id)
+    limits   = await db.get_user_limits(user_id)
     used_posts = len(posts)
     used_chan  = len(channels)
     
-    pct = (used_posts / MAX_POSTS_PER_USER) * 10
+    pct = (used_posts / limits["max_posts"]) * 10 if limits["max_posts"] > 0 else 0
     filled = int(pct)
     posts_bar = '█' * filled + '░' * (10 - filled)
 
@@ -839,7 +909,7 @@ async def settings_refresh_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
         f"   <b>Network:</b>  <a href='https://univora.website'>Univora Platform</a> 🌐\n\n"
 
         "━━━━━━  📊  <b>YOUR USAGE</b>  ━━━━━━\n"
-        f"   <b>Posts Created:</b>  <b>{used_posts}</b> / {MAX_POSTS_PER_USER}\n"
+        f"   <b>Posts Created:</b>  <b>{used_posts}</b> / {limits['max_posts']}\n"
         f"   <code>[{posts_bar}]</code>\n"
         f"   <b>Saved Channels:</b>  <b>{used_chan}</b> channels"
     )
@@ -958,9 +1028,11 @@ async def on_add_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not post_id:
         return await on_cancel_to_menu(update, ctx)
     btn_count = len(await db.get_post_buttons(post_id))
-    if btn_count >= MAX_BUTTONS_PER_POST:
+    user_id = update.effective_user.id
+    limits = await db.get_user_limits(user_id)
+    if btn_count >= limits["max_buttons"]:
         await update.message.reply_text(
-            f"⚠️ Max {MAX_BUTTONS_PER_POST} buttons per post!",
+            f"⚠️ Max {limits['max_buttons']} buttons per post!",
             reply_markup=button_panel_reply_kb(set(), has_buttons=btn_count > 0)
         )
         return MANAGING_BUTTONS
@@ -1030,8 +1102,10 @@ async def on_add_custom_reaction_init(update: Update, ctx: ContextTypes.DEFAULT_
         btns = ctx.user_data.get(key, [])
         btn_count = len(btns)
 
-    if btn_count >= MAX_BUTTONS_PER_POST:
-        await update.message.reply_text(f"⚠️ Max {MAX_BUTTONS_PER_POST} buttons per post!")
+    user_id = update.effective_user.id
+    limits = await db.get_user_limits(user_id)
+    if btn_count >= limits["max_buttons"]:
+        await update.message.reply_text(f"⚠️ Max {limits['max_buttons']} buttons per post!")
         if btn_mode == 'project': return PROJ_MANAGE_BTNS
         if btn_mode == 'add_to_post': return POST_MANAGE_BTNS
         return MANAGING_BUTTONS
@@ -2223,6 +2297,16 @@ async def on_back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def on_proj_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """User chose ⚡ Auto Button Project."""
+    user_id = update.effective_user.id
+    limits = await db.get_user_limits(user_id)
+    if limits["active_projects"] >= limits["max_projects"]:
+        await update.message.reply_text(
+            f"⚠️ You've reached the limit of <b>{limits['max_projects']}</b> Auto Button Projects.\n"
+            "Please delete an existing project or upgrade your plan.",
+            parse_mode=ParseMode.HTML,
+        )
+        return AUTO_ADDER_HOME
+        
     await update.message.reply_text(
         "📡 <b>Auto Button Project Setup</b>\n\n"
         "<b>Step 1:</b> Add <b>@UNIVORA_BUTTONBOT</b> as an admin to your channel\n"
@@ -2306,8 +2390,10 @@ async def _proj_refresh_panel(update, ctx, extra=""):
 
 async def on_proj_add_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     btns = ctx.user_data.get('proj_buttons', [])
-    if len(btns) >= MAX_BUTTONS_PER_POST:
-        await update.message.reply_text(f"⚠️ Max {MAX_BUTTONS_PER_POST} buttons!")
+    user_id = update.effective_user.id
+    limits = await db.get_user_limits(user_id)
+    if len(btns) >= limits["max_buttons"]:
+        await update.message.reply_text(f"⚠️ Max {limits['max_buttons']} buttons!")
         return PROJ_MANAGE_BTNS
     ctx.user_data['new_btn']   = {}
     ctx.user_data['btn_mode']  = 'project'
@@ -2533,8 +2619,10 @@ async def _atp_refresh_panel(update, ctx, extra=""):
 
 async def on_atp_add_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     btns = ctx.user_data.get('atp_buttons', [])
-    if len(btns) >= MAX_BUTTONS_PER_POST:
-        await update.message.reply_text(f"⚠️ Max {MAX_BUTTONS_PER_POST} buttons!")
+    user_id = update.effective_user.id
+    limits = await db.get_user_limits(user_id)
+    if len(btns) >= limits["max_buttons"]:
+        await update.message.reply_text(f"⚠️ Max {limits['max_buttons']} buttons!")
         return POST_MANAGE_BTNS
     ctx.user_data['new_btn']   = {}
     ctx.user_data['btn_mode']  = 'add_to_post'
@@ -2857,6 +2945,7 @@ def build_app() -> Application:
                 MessageHandler(txt(BTN_MYPOSTS),     on_my_posts),
                 MessageHandler(txt(BTN_CHANNEL),     on_send_channel),
                 MessageHandler(txt(BTN_STATS),       on_stats),
+                MessageHandler(txt(BTN_PLAN),        on_plan),
                 MessageHandler(txt(BTN_HELP),        on_help),
                 MessageHandler(txt(BTN_SETTINGS),    on_settings),
                 MessageHandler(txt(BTN_AUTO_ADDER),  on_auto_adder),
@@ -3025,6 +3114,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("about", cmd_about))
     app.add_handler(CommandHandler("deleteall", cmd_delete_all))
     app.add_handler(CommandHandler("stats", cmd_admin_stats))
+    app.add_handler(CommandHandler("grantpremium", cmd_grant_premium))
 
     # ─── Admin stats refresh callback ────────────────────
     app.add_handler(CallbackQueryHandler(

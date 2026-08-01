@@ -38,10 +38,20 @@ def _load_admin_ids() -> list[int]:
 
 OWNER_IDS: list[int] = _load_admin_ids()   # Set ADMIN_IDS env var on Render!
 
-# ─── Limits ──────────────────────────────────────────
-MAX_POSTS_PER_USER = 100       # Ek user kitne posts rakh sakta hai
-MAX_BUTTONS_PER_POST = 20      # Ek post mein max buttons
-MAX_BUTTONS_PER_ROW = 3        # Ek row mein max buttons
+# ─── Limits (Free vs Premium) ────────────────────────
+FREE_MAX_POSTS       = 100
+FREE_MAX_BUTTONS     = 25
+FREE_MAX_PROJECTS    = 2
+
+PREMIUM_MAX_BUTTONS  = 40
+PREMIUM_MAX_PROJECTS = 5
+PREMIUM_POSTS_ADDITION = 200  # Added permanently to user's post limit per purchase
+
+MAX_BUTTONS_PER_ROW  = 3
+
+# ─── Premium Upgrade Info ────────────────────────────
+PLAN_PRICE           = "₹99"
+ADMIN_CONTACT_URL    = "https://t.me/aaghazafzal" # Change this to actual admin username
 
 # ─── Inline Query ─────────────────────────────────────
 INLINE_CACHE_TIME = 300        # seconds

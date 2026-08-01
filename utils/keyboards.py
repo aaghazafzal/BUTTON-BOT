@@ -24,6 +24,7 @@ BTN_CREATE    = "✨ Create Post"
 BTN_MYPOSTS   = "📂 My Posts"
 BTN_CHANNEL   = "🚀 Send to Channel"
 BTN_STATS     = "📈 Stats"
+BTN_PLAN      = "💎 Plan"
 BTN_HELP      = "💡 Help"
 BTN_SETTINGS  = "🛠️ Settings"
 BTN_AUTO_ADDER = "💠 Auto Button Adder"
@@ -122,6 +123,7 @@ def main_menu_reply_kb() -> ReplyKeyboardMarkup:
             KeyboardButton(BTN_AUTO_ADDER,  api_kwargs={"style": "success"}),
         ],
         [
+            KeyboardButton(BTN_PLAN,        api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_HELP,        api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_SETTINGS,    api_kwargs={"style": "primary"}),
         ],

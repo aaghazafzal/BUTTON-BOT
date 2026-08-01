@@ -161,6 +161,77 @@ async def count_today_users() -> int:
     )
     return await _users().count_documents({"joined_at": {"$gte": today_start}})
 
+async def get_user(user_id: int) -> dict | None:
+    doc = await _users().find_one({"user_id": user_id})
+    return _row(doc)
+
+
+async def grant_premium(user_id: int) -> bool:
+    """Add 200 posts to user and extend auto-adder premium by 30 days."""
+    user = await get_user(user_id)
+    if not user:
+        return False
+        
+    now = datetime.now(timezone.utc)
+    current_expiry = user.get("premium_expiry")
+    if current_expiry and current_expiry > now:
+        new_expiry = current_expiry + timedelta(days=30)
+    else:
+        new_expiry = now + timedelta(days=30)
+
+    result = await _users().update_one(
+        {"user_id": user_id},
+        {
+            "$inc": {"premium_posts_added": 200},
+            "$set": {"premium_expiry": new_expiry}
+        }
+    )
+    return result.modified_count > 0
+
+
+async def get_user_limits(user_id: int) -> dict:
+    """Return dict with user's specific limits based on config and premium status."""
+    from config import (
+        OWNER_IDS, FREE_MAX_POSTS, FREE_MAX_BUTTONS, FREE_MAX_PROJECTS,
+        PREMIUM_MAX_BUTTONS, PREMIUM_MAX_PROJECTS
+    )
+    
+    is_admin = user_id in OWNER_IDS
+    user = await get_user(user_id) or {}
+    
+    premium_posts_added = user.get("premium_posts_added", 0)
+    premium_expiry = user.get("premium_expiry")
+    now = datetime.now(timezone.utc)
+    
+    is_premium_active = bool(premium_expiry and premium_expiry > now)
+    
+    # Check current usage
+    total_posts = await _posts().count_documents({"user_id": user_id})
+    active_projects = await _proj().count_documents({"user_id": user_id, "is_active": True})
+    
+    if is_admin:
+        return {
+            "is_admin": True,
+            "is_premium_active": True,
+            "max_posts": 999999,
+            "max_buttons": 999999,
+            "max_projects": 999999,
+            "total_posts": total_posts,
+            "active_projects": active_projects,
+            "premium_expiry": premium_expiry
+        }
+        
+    return {
+        "is_admin": False,
+        "is_premium_active": is_premium_active,
+        "max_posts": FREE_MAX_POSTS + premium_posts_added,
+        "max_buttons": PREMIUM_MAX_BUTTONS if is_premium_active else FREE_MAX_BUTTONS,
+        "max_projects": PREMIUM_MAX_PROJECTS if is_premium_active else FREE_MAX_PROJECTS,
+        "total_posts": total_posts,
+        "active_projects": active_projects,
+        "premium_expiry": premium_expiry
+    }
+
 
 
 # ══════════════════════════════════════════════════════════
