@@ -2678,7 +2678,7 @@ async def on_my_projects(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     for i, p in enumerate(projects, 1):
         title  = p.get('channel_title') or p['channel_id']
         status = "🟢 Active" if p['is_active'] else "⏸️ Paused"
-        date   = p['created_at'][:10]
+        date   = str(p['created_at'])[:10]
         lines.append(f"<b>{i}. 📢 {title}</b>\n   {status}  •  📅 {date}")
 
     text = (
@@ -2761,7 +2761,7 @@ async def on_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uname  = await _get_username(ctx.bot)
     kb     = project_post_keyboard(
         channel_id, msg_id, btns,
-        likes=counts['likes'], dislikes=counts['dislikes'], views=counts['views'],
+        counts=counts,
         bot_username=uname
     )
     if not kb:
