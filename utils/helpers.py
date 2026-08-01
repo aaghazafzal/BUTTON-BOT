@@ -242,7 +242,7 @@ CT_EMOJI = {
 }
 
 
-async def build_inline_result(post: dict, buttons: list, counts: dict) -> object | None:
+async def build_inline_result(post: dict, buttons: list, counts: dict, bot_username: str = None) -> object | None:
     """
     Build a single InlineQueryResult for a post.
 
@@ -258,7 +258,8 @@ async def build_inline_result(post: dict, buttons: list, counts: dict) -> object
     keyboard = post_keyboard(
         post_id, buttons,
         counts['likes'], counts['dislikes'], counts['views'],
-        for_channel=False  # inline mode is always from personal chats
+        for_channel=False,  # inline mode is always from personal chats
+        bot_username=bot_username
     )
 
     stats = (

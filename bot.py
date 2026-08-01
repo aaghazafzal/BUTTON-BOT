@@ -1990,13 +1990,15 @@ async def inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     filtered.append(p)
             posts = filtered
 
+    uname = await _get_username(ctx.bot)
+    
     # ── Build results ────────────────────────────────
     results = []
     for post in posts[:20]:
         pid     = post['id']
         buttons = await db.get_post_buttons(pid)
         counts  = await db.get_reaction_counts(pid)
-        result  = await build_inline_result(post, buttons, counts)
+        result  = await build_inline_result(post, buttons, counts, bot_username=uname)
         if result:
             results.append(result)
 
