@@ -890,7 +890,7 @@ async def receive_content(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     }
     
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⏭️ Skip", callback_data="skip_title")]
+        [InlineKeyboardButton("⏭️ Skip", callback_data="skip_title", api_kwargs={"style": "primary"})]
     ])
     await msg.reply_text(
         "📝 <b>Post Name</b>\n\n"
@@ -1883,8 +1883,8 @@ async def cmd_delete_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
         
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚨 Yes, delete ALL my posts", callback_data="delall_1")],
-        [InlineKeyboardButton("❌ No, cancel", callback_data="delall_cancel")]
+        [InlineKeyboardButton("🚨 Yes, delete ALL my posts", callback_data="delall_1", api_kwargs={"style": "danger"})],
+        [InlineKeyboardButton("❌ No, cancel", callback_data="delall_cancel", api_kwargs={"style": "primary"})]
     ])
     await update.message.reply_text(
         f"⚠️ <b>WARNING</b>\n\nYou are about to delete <b>{post_count}</b> posts. This action CANNOT be undone.\n\nAre you absolutely sure?",
@@ -1903,8 +1903,8 @@ async def delete_all_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
     if q.data == "delall_1":
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("☢️ I am 100% SURE. DELETE THEM!", callback_data="delall_2")],
-            [InlineKeyboardButton("🛑 Nah, I changed my mind", callback_data="delall_cancel")]
+            [InlineKeyboardButton("☢️ I am 100% SURE. DELETE THEM!", callback_data="delall_2", api_kwargs={"style": "danger"})],
+            [InlineKeyboardButton("🛑 Nah, I changed my mind", callback_data="delall_cancel", api_kwargs={"style": "primary"})]
         ])
         await q.edit_message_text(
             "🛑 <b>FINAL WARNING</b>\n\nThis will wipe ALL your posts and their buttons forever. There is no coming back.\n\nDelete everything?",
