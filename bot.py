@@ -1837,6 +1837,54 @@ async def confirm_delete_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE
     await q.edit_message_text(text)
 
 
+async def cmd_delete_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    post_count = await db.count_user_posts(user_id)
+    
+    if post_count == 0:
+        await update.message.reply_text("🤷‍♂️ You don't have any posts to delete!")
+        return
+        
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚨 Yes, delete ALL my posts", callback_data="delall_1")],
+        [InlineKeyboardButton("❌ No, cancel", callback_data="delall_cancel")]
+    ])
+    await update.message.reply_text(
+        f"⚠️ <b>WARNING</b>\n\nYou are about to delete <b>{post_count}</b> posts. This action CANNOT be undone.\n\nAre you absolutely sure?",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+
+
+async def delete_all_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    
+    if q.data == "delall_cancel":
+        await q.edit_message_text("✅ <b>Deletion cancelled.</b> Your posts are safe.", parse_mode=ParseMode.HTML)
+        return
+        
+    if q.data == "delall_1":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("☢️ I am 100% SURE. DELETE THEM!", callback_data="delall_2")],
+            [InlineKeyboardButton("🛑 Nah, I changed my mind", callback_data="delall_cancel")]
+        ])
+        await q.edit_message_text(
+            "🛑 <b>FINAL WARNING</b>\n\nThis will wipe ALL your posts and their buttons forever. There is no coming back.\n\nDelete everything?",
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+        return
+        
+    if q.data == "delall_2":
+        user_id = update.effective_user.id
+        deleted = await db.delete_all_user_posts(user_id)
+        await q.edit_message_text(
+            f"🗑️ <b>Deleted!</b>\n\nSuccessfully wiped <b>{deleted}</b> posts from the database.",
+            parse_mode=ParseMode.HTML
+        )
+
+
 async def edit_buttons_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Edit button callback — sets current_post_id and enters conversation."""
     await delete_preview(update, ctx)
@@ -2861,6 +2909,7 @@ def build_app() -> Application:
         fallbacks=[
             CommandHandler("cancel", on_cancel_to_menu),
             CommandHandler("start",  cmd_start),
+            CommandHandler("deleteall", cmd_delete_all),
         ],
         allow_reentry=True,
         per_chat=True,
@@ -2879,6 +2928,7 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(post_stats_callback,     pattern=r"^poststats\|"))
     app.add_handler(CallbackQueryHandler(delete_post_callback,    pattern=r"^delpost\|"))
     app.add_handler(CallbackQueryHandler(confirm_delete_callback, pattern=r"^confirmdelete\|"))
+    app.add_handler(CallbackQueryHandler(delete_all_callback,     pattern=r"^delall_"))
     app.add_handler(CallbackQueryHandler(inline_myposts_callback, pattern=r"^inline_myposts$"))
     app.add_handler(CallbackQueryHandler(help_callback,           pattern=r"^help\|"))
     app.add_handler(CallbackQueryHandler(check_join_callback,     pattern=r"^check_join$"))
@@ -2895,6 +2945,7 @@ def build_app() -> Application:
     # ─── Commands outside conv ────────────────────────────
     app.add_handler(CommandHandler("help",  cmd_help))
     app.add_handler(CommandHandler("about", cmd_about))
+    app.add_handler(CommandHandler("deleteall", cmd_delete_all))
     app.add_handler(CommandHandler("stats", cmd_admin_stats))
 
     # ─── Admin stats refresh callback ────────────────────
@@ -2916,7 +2967,8 @@ async def setup_commands(bot):
     default_commands = [
         BotCommand("start", "Open main menu / Check status"),
         BotCommand("help", "Get help and instructions"),
-        BotCommand("about", "About this bot & developer")
+        BotCommand("about", "About this bot & developer"),
+        BotCommand("deleteall", "Delete all your posts")
     ]
     await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
 

@@ -226,6 +226,27 @@ async def delete_post(post_id: int, user_id: int) -> bool:
     return False
 
 
+async def delete_all_user_posts(user_id: int) -> int:
+    """Deletes all posts for a user and returns the count of deleted posts."""
+    # Find all post IDs for this user
+    cursor = _posts().find({"user_id": user_id}, {"_id": 1})
+    post_ids = [doc["_id"] async for doc in cursor]
+    
+    if not post_ids:
+        return 0
+
+    # Delete all posts
+    result = await _posts().delete_many({"user_id": user_id})
+    
+    # Cascade delete for all post IDs
+    await _btns().delete_many({"post_id": {"$in": post_ids}})
+    await _rxns().delete_many({"post_id": {"$in": post_ids}})
+    await _rxc().delete_many({"_id": {"$in": post_ids}})
+    await _sent().delete_many({"post_id": {"$in": post_ids}})
+    
+    return result.deleted_count
+
+
 async def update_post_content(post_id: int, content: str, caption: str = None):
     await _posts().update_one(
         {"_id": post_id},
