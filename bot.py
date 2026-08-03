@@ -523,6 +523,39 @@ async def cmd_about(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Report an issue"""
+    text = (
+        "🚨 <b>UNIVORA REPORT CENTER</b> 🚨\n\n"
+        "Are you facing any issues, errors, or bugs while using our bot or ecosystem?\n"
+        "We are here to help! Please report any problems directly to our official Report Bot.\n\n"
+        "🛠 <b>What can you report?</b>\n"
+        "• Bot not responding or crashing\n"
+        "• Errors with buttons or channels\n"
+        "• Any UI/UX issues or feature requests\n"
+        "• Problems with the Univora ecosystem\n\n"
+        "👇 <b>Click the button below to submit your report:</b>"
+    )
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📨 REPORT [UNIVORA]", url="https://t.me/UNIVORA_REPORTBOT")]
+    ])
+    try:
+        with open(START_LOGO_PATH, "rb") as f:
+            await update.message.reply_photo(
+                photo=f,
+                caption=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+    except Exception:
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
+
+
 # ═══════════════════════════════════════════════════════
 #           MAIN MENU BUTTON HANDLERS
 # ═══════════════════════════════════════════════════════
@@ -3112,6 +3145,7 @@ def build_app() -> Application:
     # ─── Commands outside conv ────────────────────────────
     app.add_handler(CommandHandler("help",  cmd_help))
     app.add_handler(CommandHandler("about", cmd_about))
+    app.add_handler(CommandHandler("report", cmd_report))
     app.add_handler(CommandHandler("deleteall", cmd_delete_all))
     app.add_handler(CommandHandler("stats", cmd_admin_stats))
     app.add_handler(CommandHandler("grantpremium", cmd_grant_premium))
@@ -3136,6 +3170,7 @@ async def setup_commands(bot):
         BotCommand("start", "Open main menu / Check status"),
         BotCommand("help", "Get help and instructions"),
         BotCommand("about", "About this bot & developer"),
+        BotCommand("report", "Report a bug or issue"),
         BotCommand("deleteall", "Delete all your posts")
     ]
     await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
