@@ -3176,7 +3176,8 @@ async def setup_commands(bot):
     await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
 
     admin_commands = default_commands + [
-        BotCommand("stats", "View bot statistics (Admin Only)")
+        BotCommand("stats", "View bot statistics (Admin Only)"),
+        BotCommand("grantpremium", "Grant premium to a user (Admin Only)")
     ]
     for admin_id in OWNER_IDS:
         try:

@@ -51,7 +51,7 @@ MAX_BUTTONS_PER_ROW  = 3
 
 # ─── Premium Upgrade Info ────────────────────────────
 PLAN_PRICE           = "₹99"
-ADMIN_CONTACT_URL    = "https://t.me/aaghazafzal" # Change this to actual admin username
+ADMIN_CONTACT_URL    = "https://t.me/rolexsir_8"
 
 # ─── Inline Query ─────────────────────────────────────
 INLINE_CACHE_TIME = 300        # seconds
