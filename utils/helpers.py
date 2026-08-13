@@ -51,20 +51,20 @@ def extract_content(message: Message) -> tuple[str, str, str | None]:
     Extract (content_type, content/file_id, caption) from a message.
     Returns (None, None, None) if unsupported.
     """
-    if message.text:
-        return 'text', message.text, None
+    if message.text_html:
+        return 'text', message.text_html, None
     elif message.photo:
-        return 'photo', message.photo[-1].file_id, message.caption
+        return 'photo', message.photo[-1].file_id, message.caption_html
     elif message.video:
-        return 'video', message.video.file_id, message.caption
+        return 'video', message.video.file_id, message.caption_html
     elif message.document:
-        return 'document', message.document.file_id, message.caption
+        return 'document', message.document.file_id, message.caption_html
     elif message.animation:
-        return 'animation', message.animation.file_id, message.caption
+        return 'animation', message.animation.file_id, message.caption_html
     elif message.audio:
-        return 'audio', message.audio.file_id, message.caption
+        return 'audio', message.audio.file_id, message.caption_html
     elif message.voice:
-        return 'voice', message.voice.file_id, message.caption
+        return 'voice', message.voice.file_id, message.caption_html
     elif message.video_note:
         return 'video_note', message.video_note.file_id, None
     elif message.sticker:
