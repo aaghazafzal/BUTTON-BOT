@@ -38,7 +38,7 @@ def fmt_num(n: int) -> str:
 def is_valid_url(url: str) -> bool:
     pattern = re.compile(
         r'^(https?|tg)://'
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9\-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}|'
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9\-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}|'
         r'localhost|\d{1,3}(?:\.\d{1,3}){3})'
         r'(?::\d+)?(?:/[^\s]*)?$',
         re.IGNORECASE
