@@ -10,9 +10,7 @@ export DISABLE_FLASK=1
 echo "🐍 Starting Python Bot..."
 python3 bot.py &
 
-# 2. Build and start Next.js WebApp
+# 2. Start Next.js WebApp
 echo "🌐 Starting Next.js WebApp..."
 cd webapp
-npm install
-npm run build
 npm run start
