@@ -1,16 +1,22 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useTelegramUser } from "@/lib/twa";
-import { Zap, Plus, AlertCircle, ChevronRight, Settings2 } from "lucide-react";
+import { Zap, Plus, AlertCircle, Settings2, Loader2 } from "lucide-react";
+import useSWR from "swr";
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export default function Projects() {
   const { user } = useTelegramUser();
 
-  // Mock data for projects
-  const projects = [
-    { id: 1, name: "Main Channel Updates", target: "@univora_updates", status: "active", buttons: 2 },
-    { id: 2, name: "Movie Links Forwarder", target: "-10049281231", status: "paused", buttons: 4 },
-  ];
+  const { data, error, isLoading } = useSWR(
+    user?.id ? `/api/projects?userId=${user.id}` : null,
+    fetcher,
+    { refreshInterval: 5000 }
+  );
+
+  const projects = data?.projects || [];
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out pb-10">
@@ -32,35 +38,46 @@ export default function Projects() {
       </header>
 
       {/* Projects Grid */}
+      {isLoading ? (
+        <div className="flex items-center justify-center p-12 text-muted-foreground">
+          <Loader2 className="w-8 h-8 animate-spin" />
+        </div>
+      ) : (
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {projects.map((proj) => (
+        {projects.map((proj: any) => {
+          let parsedButtons = [];
+          try {
+            parsedButtons = JSON.parse(proj.buttons_json || "[]");
+          } catch(e) {}
+          
+          return (
           <div key={proj.id} className="glass-card rounded-3xl p-6 flex flex-col group hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
             <div className="flex items-start justify-between mb-4">
               <div className="p-3 bg-secondary rounded-2xl text-foreground">
                 <Zap className="w-6 h-6" />
               </div>
               <span className={`px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-full ${
-                proj.status === 'active' 
+                proj.is_active 
                   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' 
                   : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
               }`}>
-                {proj.status}
+                {proj.is_active ? "active" : "paused"}
               </span>
             </div>
             
-            <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors">{proj.name}</h3>
-            <p className="text-sm font-mono text-muted-foreground mb-6">{proj.target}</p>
+            <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors">{proj.channel_title}</h3>
+            <p className="text-sm font-mono text-muted-foreground mb-6">{proj.channel_id}</p>
             
             <div className="mt-auto pt-4 border-t border-border/50 flex items-center justify-between">
               <div className="text-sm font-medium text-muted-foreground">
-                <span className="text-foreground font-bold">{proj.buttons}</span> Buttons
+                <span className="text-foreground font-bold">{parsedButtons.length}</span> Buttons
               </div>
               <button className="p-2 bg-background rounded-xl hover:bg-secondary transition-colors">
                 <Settings2 className="w-5 h-5 text-foreground" />
               </button>
             </div>
           </div>
-        ))}
+        )})}
         
         {/* Create New Card */}
         <button className="glass-card rounded-3xl p-6 flex flex-col items-center justify-center gap-4 text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-secondary/20 transition-all min-h-[220px] group border-dashed border-2">
@@ -70,6 +87,7 @@ export default function Projects() {
           <span className="font-bold tracking-wide">Create Auto Adder</span>
         </button>
       </div>
+      )}
 
       {/* Info Section */}
       <div className="rounded-3xl p-6 bg-secondary/30 border border-border/50 flex flex-col md:flex-row gap-4 items-start md:items-center text-sm text-muted-foreground">
