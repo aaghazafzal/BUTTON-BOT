@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* 
+  PREMIUM OLIVE / SAGE THEME 
+  A deeply calming, luxurious botanical palette.
+*/
+
+:root {
+  --background: #f7f9f6; /* Very pale sage/mint off-white */
+  --foreground: #1f241d; /* Very deep olive-black */
+  --card: #ffffff;
+  --card-foreground: #1f241d;
+  --primary: #4a5c43;    /* Deep Sage Green */
+  --primary-foreground: #ffffff;
+  --secondary: #e6ebe3;  /* Muted pale green-gray */
+  --secondary-foreground: #2d362a;
+  --muted: #e6ebe3;
+  --muted-foreground: #697a62;
+  --border: #d0d6cd;
+  --input: #d0d6cd;
+  --ring: #4a5c43;
+  --radius: 1.25rem;
+}
+
+.dark {
+  --background: #0d120f; /* Extremely dark forest/olive black */
+  --foreground: #e3e8e1; /* Soft pale sage */
+  --card: #151c17;       /* Slightly lighter dark olive */
+  --card-foreground: #e3e8e1;
+  --primary: #a1b897;    /* Bright muted sage/mint */
+  --primary-foreground: #0d120f;
+  --secondary: #212c24;  /* Dark muted green-gray */
+  --secondary-foreground: #e3e8e1;
+  --muted: #212c24;
+  --muted-foreground: #8a9c82;
+  --border: #212c24;
+  --input: #212c24;
+  --ring: #a1b897;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background-color: var(--background);
+  /* A very subtle botanical gradient */
+  background-image: radial-gradient(circle at top right, rgba(74, 92, 67, 0.04) 0%, transparent 40%);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dark body {
+  background-image: radial-gradient(circle at top left, rgba(161, 184, 151, 0.03) 0%, transparent 50%);
+}
+
+/* Glassmorphism utilities */
+.glass {
+  background: rgba(247, 249, 246, 0.7); 
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dark .glass {
+  background: rgba(13, 18, 15, 0.75);
+  border-color: rgba(255, 255, 255, 0.03);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 10px 40px -10px rgba(31, 36, 29, 0.06);
+  border: 1px solid rgba(208, 214, 205, 0.5);
+}
+
+.dark .glass-card {
+  background: rgba(21, 28, 23, 0.5);
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
