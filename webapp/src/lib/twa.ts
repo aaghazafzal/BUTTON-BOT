@@ -18,10 +18,12 @@ export function useTelegramUser() {
     // Dynamically import the SDK only on the client side
     import("@twa-dev/sdk").then((module) => {
       const WebApp = module.default;
-      if (typeof window !== "undefined" && WebApp.initDataUnsafe?.user) {
-        setUser(WebApp.initDataUnsafe.user as TelegramUser);
+      if (typeof window !== "undefined") {
         WebApp.ready();
         WebApp.expand();
+        if (WebApp.initDataUnsafe?.user) {
+          setUser(WebApp.initDataUnsafe.user as TelegramUser);
+        }
       }
       setIsLoading(false);
     }).catch(err => {

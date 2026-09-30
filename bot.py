@@ -3210,13 +3210,6 @@ async def setup_commands(bot):
         BotCommand("deleteall", "Delete all your posts")
     ]
     await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
-    
-    webapp_url = os.environ.get("RENDER_EXTERNAL_URL", "https://button-bot-bnly.onrender.com")
-    try:
-        from telegram import MenuButtonWebApp, WebAppInfo
-        await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="🚀 Open App", web_app=WebAppInfo(url=webapp_url)))
-    except Exception as e:
-        logger.warning(f"Could not set webapp menu button: {e}")
 
     admin_commands = default_commands + [
         BotCommand("stats", "View bot statistics (Admin Only)"),

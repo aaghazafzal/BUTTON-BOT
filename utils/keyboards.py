@@ -108,7 +108,7 @@ def main_menu_reply_kb() -> ReplyKeyboardMarkup:
     
     return ReplyKeyboardMarkup([
         [
-            KeyboardButton("🚀 Open App (Premium)", web_app=WebAppInfo(url=webapp_url)),
+            KeyboardButton("🚀 Open App (Premium)", web_app=WebAppInfo(url=webapp_url), api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_CREATE,      api_kwargs={"style": "success"}),
         ],
         [
