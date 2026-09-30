@@ -6,8 +6,15 @@
 
 import os
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env if present
+load_dotenv()
+
 # ─── Bot Token ───────────────────────────────────────
-BOT_TOKEN = "8813750611:AAET-pru66SIHH9oYzRGPMTHvhdfCbUCei0"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("⚠️ BOT_TOKEN is not set in environment variables!")
 
 # ─── Univora Platform Branding ───────────────────────────
 FORCE_JOIN_CHANNEL     = "@Univora88"
@@ -21,7 +28,9 @@ HELP_LOGO_PATH  = os.path.join(_BASE, "helplogo.png")
 
 # ─── Database ────────────────────────────────────────
 # MongoDB — set MONGO_URI env var on Render
-MONGO_URI     = "mongodb+srv://buttonbot:aaghaz9431@buttonbot.x2bdflb.mongodb.net/?appName=buttonbot"
+MONGO_URI     = os.environ.get("MONGO_URI")
+if not MONGO_URI:
+    raise ValueError("⚠️ MONGO_URI is not set in environment variables!")
 MONGO_DB_NAME = "button_bot"
 
 # ─── Bot Owners / Admins ─────────────────────────────
