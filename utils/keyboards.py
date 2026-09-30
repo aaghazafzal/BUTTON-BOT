@@ -14,7 +14,7 @@ RULE:
 from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup,
     ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton,
-    SwitchInlineQueryChosenChat,
+    SwitchInlineQueryChosenChat, WebAppInfo
 )
 from config import COLOR_EMOJIS, COLORS_DISPLAY
 
@@ -102,28 +102,27 @@ def remove_kb() -> ReplyKeyboardRemove:
 def main_menu_reply_kb() -> ReplyKeyboardMarkup:
     """
     Main menu — Auto Button Adder as prominent full-row button.
-      📝 Create Post  → green
-      📋 My Posts     → blue
-      📡 Channel      → blue
-      📊 Stats        → blue
-      ⚡ Auto Adder   → green (FULL ROW — prominent headline feature)
-      ℹ️ Help         → blue
-      ⚙️ Settings     → blue
     """
+    import os
+    webapp_url = os.environ.get("RENDER_EXTERNAL_URL", "https://button-bot-bnly.onrender.com")
+    
     return ReplyKeyboardMarkup([
         [
+            KeyboardButton("🚀 Open App (Premium)", web_app=WebAppInfo(url=webapp_url)),
             KeyboardButton(BTN_CREATE,      api_kwargs={"style": "success"}),
-            KeyboardButton(BTN_MYPOSTS,     api_kwargs={"style": "primary"}),
         ],
         [
+            KeyboardButton(BTN_MYPOSTS,     api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_CHANNEL,     api_kwargs={"style": "primary"}),
+        ],
+        [
             KeyboardButton(BTN_STATS,       api_kwargs={"style": "primary"}),
+            KeyboardButton("💎 Plan",        api_kwargs={"style": "primary"}),
         ],
         [
             KeyboardButton(BTN_AUTO_ADDER,  api_kwargs={"style": "success"}),
         ],
         [
-            KeyboardButton(BTN_PLAN,        api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_HELP,        api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_SETTINGS,    api_kwargs={"style": "primary"}),
         ],
