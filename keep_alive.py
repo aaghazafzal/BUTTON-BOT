@@ -128,6 +128,10 @@ def status():
 # ─── Internal helpers ─────────────────────────────────────────────────────────
 
 def _run_flask():
+    if os.environ.get("DISABLE_FLASK") == "1":
+        logger.info("keep_alive: Flask server disabled via DISABLE_FLASK. Only pinging.")
+        return
+        
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, threaded=True, use_reloader=False)
 
