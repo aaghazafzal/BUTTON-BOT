@@ -42,16 +42,19 @@ export async function POST(request: Request) {
 
     // 4. Insert Buttons if provided
     if (buttons && Array.isArray(buttons) && buttons.length > 0) {
-      const buttonDocs = buttons.map((btn: any) => ({
-        post_id: postId,
-        row_num: btn.row_num,
-        order_num: btn.order_num,
-        button_type: btn.button_type,
-        text: btn.text,
-        url: btn.url || null,
-        color: btn.color || 'default'
-      }));
-      await db.collection('buttons').insertMany(buttonDocs);
+      for (const btn of buttons) {
+        const btnId = await getNextId("buttons");
+        await db.collection('buttons').insertOne({
+          _id: btnId as any,
+          post_id: postId as any,
+          row_num: btn.row_num,
+          order_num: btn.order_num,
+          button_type: btn.button_type,
+          text: btn.text,
+          url: btn.url || null,
+          color: btn.color || 'default'
+        });
+      }
     }
 
     return NextResponse.json({ success: true, postId });
