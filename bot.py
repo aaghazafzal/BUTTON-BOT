@@ -986,6 +986,16 @@ async def receive_content(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("❌ Unsupported content. Send text, photo, video, document, etc.")
         return WAITING_CONTENT
 
+    # Backup media to bin channel if it's not text
+    if content_type != 'text' and getattr(config, 'BIN_CHANNEL_ID', None):
+        try:
+            copied_msg = await msg.copy(chat_id=config.BIN_CHANNEL_ID)
+            _, new_content, _ = extract_content(copied_msg)
+            if new_content:
+                content = new_content
+        except Exception as e:
+            logger.error(f"Failed to backup media to bin channel: {e}")
+
     ctx.user_data['draft_post'] = {
         'type': content_type,
         'content': content,

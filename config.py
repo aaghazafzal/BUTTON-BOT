@@ -16,6 +16,12 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("⚠️ BOT_TOKEN is not set in environment variables!")
 
+# ─── Bin Channel ─────────────────────────────────────
+# Store all media in this channel to save DB space and persist files
+BIN_CHANNEL_ID = -1004388532419
+if os.environ.get("BIN_CHANNEL_ID"):
+    BIN_CHANNEL_ID = int(os.environ.get("BIN_CHANNEL_ID"))
+
 # ─── Univora Platform Branding ───────────────────────────
 FORCE_JOIN_CHANNEL     = "@Univora88"
 FORCE_JOIN_CHANNEL_URL = "https://t.me/Univora88"
