@@ -114,21 +114,18 @@ def main_menu_reply_kb(user_id: int = None, first_name: str = None) -> ReplyKeyb
         
     return ReplyKeyboardMarkup([
         [
-            KeyboardButton("🚀 Open App (Premium)", web_app=WebAppInfo(url=webapp_url), api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_CREATE,      api_kwargs={"style": "success"}),
-        ],
-        [
             KeyboardButton(BTN_MYPOSTS,     api_kwargs={"style": "primary"}),
-            KeyboardButton(BTN_CHANNEL,     api_kwargs={"style": "primary"}),
         ],
         [
+            KeyboardButton(BTN_CHANNEL,     api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_STATS,       api_kwargs={"style": "primary"}),
-            KeyboardButton("💎 Plan",        api_kwargs={"style": "primary"}),
         ],
         [
             KeyboardButton(BTN_AUTO_ADDER,  api_kwargs={"style": "success"}),
         ],
         [
+            KeyboardButton("💎 Plan",        api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_HELP,        api_kwargs={"style": "primary"}),
             KeyboardButton(BTN_SETTINGS,    api_kwargs={"style": "primary"}),
         ],
