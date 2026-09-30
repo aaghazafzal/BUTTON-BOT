@@ -207,10 +207,24 @@ def color_reply_kb() -> ReplyKeyboardMarkup:
     ], resize_keyboard=True)
 
 
-def row_reply_kb(max_rows: int = 8) -> ReplyKeyboardMarkup:
-    """Row number picker."""
-    nums = [str(i) for i in range(1, max_rows + 1)]
+def row_reply_kb(page: int = 0, total_rows: int = 50) -> ReplyKeyboardMarkup:
+    """Row number picker with pagination."""
+    items_per_page = 8
+    start = page * items_per_page + 1
+    end = min(start + items_per_page, total_rows + 1)
+
+    nums = [str(i) for i in range(start, end)]
     rows = [nums[i:i+4] for i in range(0, len(nums), 4)]
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(KeyboardButton("⬅️ Prev", api_kwargs={"style": "primary"}))
+    if end <= total_rows:
+        nav_row.append(KeyboardButton("➡️ Next", api_kwargs={"style": "primary"}))
+
+    if nav_row:
+        rows.append(nav_row)
+
     rows.append([KeyboardButton(BTN_CANCEL, api_kwargs={"style": "danger"})])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 

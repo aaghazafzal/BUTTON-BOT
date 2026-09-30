@@ -1175,17 +1175,30 @@ async def receive_reaction_color(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         return ADDING_REACTION_COLOR
 
     ctx.user_data['new_btn']['color'] = color
+    ctx.user_data['row_page'] = 0
     await update.message.reply_text(
         f"✅ Color: <b>{label}</b>\n\n"
         "📌 <b>Choose row number</b>:\n"
         "<i>Buttons in same row appear side by side</i>",
         parse_mode=ParseMode.HTML,
-        reply_markup=row_reply_kb()
+        reply_markup=row_reply_kb(page=0)
     )
     return ADDING_REACTION_ROW
 
 async def receive_reaction_row(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    
+    if text == "➡️ Next":
+        page = ctx.user_data.get('row_page', 0) + 1
+        ctx.user_data['row_page'] = page
+        await update.message.reply_text("📌 <b>Choose row number</b>:", parse_mode=ParseMode.HTML, reply_markup=row_reply_kb(page=page))
+        return ADDING_REACTION_ROW
+    elif text == "⬅️ Prev":
+        page = max(0, ctx.user_data.get('row_page', 0) - 1)
+        ctx.user_data['row_page'] = page
+        await update.message.reply_text("📌 <b>Choose row number</b>:", parse_mode=ParseMode.HTML, reply_markup=row_reply_kb(page=page))
+        return ADDING_REACTION_ROW
+
     if not text.isdigit():
         await update.message.reply_text("Please choose a row number from the keyboard 👇")
         return ADDING_REACTION_ROW
@@ -1545,18 +1558,31 @@ async def receive_button_color(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return ADDING_URL_COLOR
 
     ctx.user_data['new_btn']['color'] = color
+    ctx.user_data['row_page'] = 0
     post_id = ctx.user_data['current_post_id']
     await update.message.reply_text(
         f"✅ Color: <b>{label}</b>\n\n"
         "📌 <b>Choose row number</b>:\n"
         "<i>Buttons in same row appear side by side</i>",
         parse_mode=ParseMode.HTML,
-        reply_markup=row_reply_kb()
+        reply_markup=row_reply_kb(page=0)
     )
     return ADDING_URL_ROW
 
 async def receive_button_row(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    
+    if text == "➡️ Next":
+        page = ctx.user_data.get('row_page', 0) + 1
+        ctx.user_data['row_page'] = page
+        await update.message.reply_text("📌 <b>Choose row number</b>:", parse_mode=ParseMode.HTML, reply_markup=row_reply_kb(page=page))
+        return ADDING_URL_ROW
+    elif text == "⬅️ Prev":
+        page = max(0, ctx.user_data.get('row_page', 0) - 1)
+        ctx.user_data['row_page'] = page
+        await update.message.reply_text("📌 <b>Choose row number</b>:", parse_mode=ParseMode.HTML, reply_markup=row_reply_kb(page=page))
+        return ADDING_URL_ROW
+
     if not text.isdigit():
         await update.message.reply_text("Please choose a row number from the keyboard 👇")
         return ADDING_URL_ROW
@@ -3025,7 +3051,7 @@ def build_app() -> Application:
             ],
             ADDING_URL_ROW: [
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
-                MessageHandler(filters.Text([str(i) for i in range(1, 9)]), receive_button_row),
+                MessageHandler(filters.Regex(r'^([1-9]|[1-4][0-9]|50|➡️ Next|⬅️ Prev)$'), receive_button_row),
             ],
             IN_TEMPLATES: [
                 MessageHandler(
@@ -3103,7 +3129,7 @@ def build_app() -> Application:
             ],
             ADDING_REACTION_ROW: [
                 MessageHandler(txt(BTN_CANCEL), on_cancel_to_menu),
-                MessageHandler(filters.Text([str(i) for i in range(1, 9)]), receive_reaction_row),
+                MessageHandler(filters.Regex(r'^([1-9]|[1-4][0-9]|50|➡️ Next|⬅️ Prev)$'), receive_reaction_row),
             ],
         },
         fallbacks=[
