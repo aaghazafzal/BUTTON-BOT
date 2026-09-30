@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
     // 2. Insert Post (matches Python bot structure)
     await db.collection('posts').insertOne({
-      _id: postId,
+      _id: postId as any,
       user_id: Number(userId),
       content_type: contentType,
       content: content,
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
     // 3. Initialize Reaction Counts
     await db.collection('reaction_counts').updateOne(
-      { _id: postId },
+      { _id: postId as any },
       { $setOnInsert: { likes: 0, dislikes: 0, views: 0, shares: 0 } },
       { upsert: true }
     );

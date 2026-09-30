@@ -36,7 +36,7 @@ export async function getNextId(name: string): Promise<number> {
   if (!db) throw new Error("Database not connected");
   
   const doc = await db.collection("counters").findOneAndUpdate(
-    { _id: name },
+    { _id: name as any },
     { $inc: { seq: 1 } },
     { upsert: true, returnDocument: 'after' }
   );
