@@ -213,7 +213,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _send_welcome(update.message, ctx, is_message=True)
     await update.message.reply_text(
         "👇 Choose an option from the menu:",
-        reply_markup=main_menu_reply_kb()
+        reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
     )
     return MAIN_MENU
 
@@ -244,7 +244,7 @@ async def check_join_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             chat_id=user_id,
             text="✅ <b>Access Granted!</b>\n\nWelcome to Univora Button Bot! 🎉\n\nUse the menu below to get started:",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
     else:
         await q.answer("❌ You haven't joined yet! Please join first.", show_alert=True)
@@ -258,7 +258,7 @@ async def welcome_launch_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         chat_id=update.effective_user.id,
         text="✅ <b>Bot Launched!</b>\n\nUse the menu below to start creating posts:",
         parse_mode=ParseMode.HTML,
-        reply_markup=main_menu_reply_kb()
+        reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
     )
 
 
@@ -571,7 +571,7 @@ async def on_create_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"⚠️ You've reached the limit of <b>{limits['max_posts']}</b> posts.\n"
             "Delete some old posts first with /mypost, or upgrade your plan.",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
         return MAIN_MENU
 
@@ -596,14 +596,14 @@ async def on_my_posts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not posts:
         await update.message.reply_text(
             "📭 You don't have any posts yet!\n\nCreate your first post 👇",
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
         return MAIN_MENU
 
     await update.message.reply_text(
         f"📋 <b>Your Posts ({len(posts)})</b>\n\nTap a post to manage it:",
         parse_mode=ParseMode.HTML,
-        reply_markup=main_menu_reply_kb()
+        reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
     )
     await update.message.reply_text(
         "Select:", reply_markup=post_list_inline_kb(posts, page=0)
@@ -968,7 +968,7 @@ async def on_cancel_to_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
     await update.message.reply_text(
         "❌ Cancelled. Back to main menu.",
-        reply_markup=main_menu_reply_kb()
+        reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
     )
     return MAIN_MENU
 
@@ -1400,7 +1400,7 @@ async def on_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Type in any chat:\n<code>@{uname} {post_id}</code>\n\n"
         f"📡 To send to a channel, use:\n<code>/sendto {post_id} @yourchannel</code>",
         parse_mode=ParseMode.HTML,
-        reply_markup=main_menu_reply_kb()
+        reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
     )
     # Also send the actual post as preview
     post = await db.get_post(post_id)
@@ -1725,11 +1725,11 @@ async def channel_manager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
                     f"✅ <b>Post #{post_id} sent to {channel_name}!</b>\n\n"
                     "View your channel to see the post.",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=main_menu_reply_kb()
+                    reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
                 )
             except Exception as e:
                 await progress.delete()
-                await q.message.reply_text(f"❌ Failed: {e}", reply_markup=main_menu_reply_kb())
+                await q.message.reply_text(f"❌ Failed: {e}", reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name))
 
             ctx.user_data['direct_send_post_id'] = None
             return MAIN_MENU
@@ -1808,7 +1808,7 @@ async def receive_channel_post_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
 
     if not channel:
-        await update.message.reply_text("❌ Channel not set. Start over.", reply_markup=main_menu_reply_kb())
+        await update.message.reply_text("❌ Channel not set. Start over.", reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name))
         return MAIN_MENU
 
     post = await db.get_post(post_id)
@@ -1832,7 +1832,7 @@ async def receive_channel_post_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE
             f"✅ <b>Post #{post_id} sent to {channel}!</b>\n\n"
             "View your channel to see the post.",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
     except Forbidden:
         await progress.delete()
@@ -1844,7 +1844,7 @@ async def receive_channel_post_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE
             "3. Add @UNIVORA_BUTTONBOT as admin\n"
             "4. Enable 'Post Messages' permission",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
     except BadRequest as e:
         await progress.delete()
@@ -1852,14 +1852,14 @@ async def receive_channel_post_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE
             f"❌ <b>Bad Request:</b> <code>{e}</code>\n\n"
             "Make sure the channel ID is correct.",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
     except TelegramError as e:
         await progress.delete()
         await update.message.reply_text(
             f"❌ <b>Error:</b> <code>{e}</code>",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
 
     ctx.user_data.pop('target_channel', None)
@@ -1877,7 +1877,7 @@ async def cmd_sendto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Usage: <code>/sendto &lt;post_id&gt; @channel</code>",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
         return MAIN_MENU
 
@@ -1885,13 +1885,13 @@ async def cmd_sendto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         post_id = int(args[0])
         channel = args[1]
     except ValueError:
-        await update.message.reply_text("❌ Invalid format.", reply_markup=main_menu_reply_kb())
+        await update.message.reply_text("❌ Invalid format.", reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name))
         return MAIN_MENU
 
     user_id = update.effective_user.id
     post = await db.get_post(post_id)
     if not post or post['user_id'] != user_id:
-        await update.message.reply_text("❌ Post not found.", reply_markup=main_menu_reply_kb())
+        await update.message.reply_text("❌ Post not found.", reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name))
         return MAIN_MENU
 
     try:
@@ -1899,15 +1899,15 @@ async def cmd_sendto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db.increment_views(post_id)
         await update.message.reply_text(
             f"✅ Post #{post_id} sent to {channel}!",
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
     except Forbidden:
         await update.message.reply_text(
             "❌ Add me as admin in that channel first!",
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
     except TelegramError as e:
-        await update.message.reply_text(f"❌ Error: {e}", reply_markup=main_menu_reply_kb())
+        await update.message.reply_text(f"❌ Error: {e}", reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name))
     return MAIN_MENU
 
 
@@ -1921,13 +1921,13 @@ async def cmd_mypost(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not posts:
         await update.message.reply_text(
             "📭 No posts yet! Create one 👇",
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
         return MAIN_MENU
     await update.message.reply_text(
         f"📋 <b>Your Posts ({len(posts)})</b>",
         parse_mode=ParseMode.HTML,
-        reply_markup=main_menu_reply_kb()
+        reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
     )
     await update.message.reply_text("Select:", reply_markup=post_list_inline_kb(posts))
     return MAIN_MENU
@@ -2355,7 +2355,7 @@ async def on_back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
     await update.message.reply_text(
         "🏠 Back to main menu.",
-        reply_markup=main_menu_reply_kb()
+        reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
     )
     return MAIN_MENU
 
@@ -2559,7 +2559,7 @@ async def on_proj_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "Every <b>new post</b> in this channel will automatically get these buttons! 🚀\n\n"
         "<i>Below is how your posts will look:</i>",
         parse_mode=ParseMode.HTML,
-        reply_markup=main_menu_reply_kb()
+        reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
     )
     if kb:
         await update.message.reply_text(
@@ -2794,7 +2794,7 @@ async def on_atp_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🔘 Buttons: <b>{len(btns)}</b> added\n\n"
             f"The buttons have been applied to the channel post! 🚀",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
         await update.message.reply_text(
             "👇 View the post:",
@@ -2808,7 +2808,7 @@ async def on_atp_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"❌ Failed to edit the post: <code>{e}</code>\n\n"
             "Make sure the bot is an admin with <i>Edit Messages</i> permission.",
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_reply_kb()
+            reply_markup=main_menu_reply_kb(update.effective_user.id, update.effective_user.first_name)
         )
     ctx.user_data.clear()
     return MAIN_MENU

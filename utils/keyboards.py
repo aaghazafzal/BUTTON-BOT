@@ -99,13 +99,19 @@ def remove_kb() -> ReplyKeyboardRemove:
 #   REPLY KEYBOARDS  (bottom navigation)
 # ═══════════════════════════════════════════════════════════════
 
-def main_menu_reply_kb() -> ReplyKeyboardMarkup:
+def main_menu_reply_kb(user_id: int = None, first_name: str = None) -> ReplyKeyboardMarkup:
     """
     Main menu — Auto Button Adder as prominent full-row button.
     """
     import os
-    webapp_url = os.environ.get("RENDER_EXTERNAL_URL", "https://button-bot-bnly.onrender.com")
+    from urllib.parse import quote
+    base_url = os.environ.get("RENDER_EXTERNAL_URL", "https://button-bot-bnly.onrender.com").rstrip("/")
     
+    webapp_url = base_url
+    if user_id:
+        fname = quote(first_name or "User")
+        webapp_url = f"{base_url}?tg_user_id={user_id}&tg_name={fname}"
+        
     return ReplyKeyboardMarkup([
         [
             KeyboardButton("🚀 Open App (Premium)", web_app=WebAppInfo(url=webapp_url), api_kwargs={"style": "primary"}),
