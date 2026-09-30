@@ -27,8 +27,12 @@ export default function Settings() {
           {/* Profile Card */}
           <div className="glass-card rounded-3xl p-6 md:p-8 space-y-6">
             <div className="flex items-center gap-5">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary border border-primary/20 shadow-inner">
-                <User className="w-10 h-10" />
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary border border-primary/20 shadow-inner overflow-hidden shrink-0">
+                {user?.photo_url ? (
+                  <img src={user.photo_url} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-10 h-10" />
+                )}
               </div>
               <div>
                 <h2 className="text-2xl font-bold">{user ? `${user.first_name} ${user.last_name || ''}` : 'Loading...'}</h2>
