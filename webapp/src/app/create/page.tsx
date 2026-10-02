@@ -277,12 +277,12 @@ export default function CreatePost() {
 
                       <div className="space-y-3">
                         {rowBtns.map((btn) => (
-                          <div key={btn.id} className="flex flex-col md:flex-row gap-3 bg-background p-3 rounded-xl border border-border/50 shadow-sm relative">
+                          <div key={btn.id} className="flex flex-col flex-wrap lg:flex-nowrap lg:flex-row gap-3 bg-background p-3 rounded-xl border border-border/50 shadow-sm relative">
                             
                             <select 
                               value={btn.button_type} 
                               onChange={(e) => updateButton(btn.id, { button_type: e.target.value as ButtonType, text: e.target.value === 'url' ? 'Link' : e.target.value })}
-                              className="bg-secondary text-foreground text-sm rounded-lg px-3 py-2 border-none outline-none md:w-32 focus:ring-2 focus:ring-primary/20"
+                              className="bg-secondary text-foreground text-sm rounded-lg px-3 py-2 border-none outline-none lg:w-32 focus:ring-2 focus:ring-primary/20 shrink-0"
                             >
                               <option value="url">URL Link</option>
                               <option value="like">👍 Like</option>
@@ -296,21 +296,33 @@ export default function CreatePost() {
                               value={btn.text} 
                               onChange={(e) => updateButton(btn.id, { text: e.target.value })}
                               placeholder="Button Text"
-                              className="flex-1 bg-secondary text-foreground text-sm rounded-lg px-3 py-2 border-none outline-none focus:ring-2 focus:ring-primary/20"
+                              className="flex-1 min-w-[120px] bg-secondary text-foreground text-sm rounded-lg px-3 py-2 border-none outline-none focus:ring-2 focus:ring-primary/20"
                             />
 
                             {btn.button_type === "url" && (
-                              <input 
-                                type="url" 
-                                value={btn.url || ""} 
-                                onChange={(e) => updateButton(btn.id, { url: e.target.value })}
-                                placeholder="https://"
-                                className="flex-1 bg-secondary text-foreground text-sm rounded-lg px-3 py-2 border-none outline-none focus:ring-2 focus:ring-primary/20"
-                              />
+                              <div className="flex flex-1 flex-col sm:flex-row gap-2">
+                                <input 
+                                  type="url" 
+                                  value={btn.url || ""} 
+                                  onChange={(e) => updateButton(btn.id, { url: e.target.value })}
+                                  placeholder="https://"
+                                  className="flex-1 min-w-[120px] bg-secondary text-foreground text-sm rounded-lg px-3 py-2 border-none outline-none focus:ring-2 focus:ring-primary/20"
+                                />
+                                <select 
+                                  value={btn.color || 'default'} 
+                                  onChange={(e) => updateButton(btn.id, { color: e.target.value })}
+                                  className="bg-secondary text-foreground text-sm rounded-lg px-3 py-2 border-none outline-none sm:w-28 focus:ring-2 focus:ring-primary/20 shrink-0"
+                                >
+                                  <option value="default">Neutral</option>
+                                  <option value="primary">Blue</option>
+                                  <option value="success">Green</option>
+                                  <option value="danger">Red</option>
+                                </select>
+                              </div>
                             )}
 
-                            <button onClick={() => removeButton(btn.id)} className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors shrink-0">
-                              <Trash2 className="w-5 h-5 md:w-4 md:h-4" />
+                            <button onClick={() => removeButton(btn.id)} className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors shrink-0 flex items-center justify-center">
+                              <Trash2 className="w-5 h-5 lg:w-4 lg:h-4" />
                             </button>
                           </div>
                         ))}
@@ -388,7 +400,11 @@ export default function CreatePost() {
                       <div 
                         key={btn.id} 
                         className={`flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 px-1 sm:px-2 rounded-xl text-[12px] sm:text-[13px] font-medium transition-colors shadow-sm backdrop-blur-md border border-white/5
-                          ${btn.button_type === 'like' || btn.button_type === 'dislike' ? 'bg-background/70 text-foreground hover:bg-background/90' : 'bg-primary/20 text-primary hover:bg-primary/30'}
+                          ${btn.button_type === 'url' && btn.color === 'primary' ? 'bg-primary/20 text-primary hover:bg-primary/30' :
+                            btn.button_type === 'url' && btn.color === 'success' ? 'bg-emerald-500/20 text-emerald-500 dark:text-emerald-400 hover:bg-emerald-500/30' :
+                            btn.button_type === 'url' && btn.color === 'danger' ? 'bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-500/30' :
+                            btn.button_type === 'views' || btn.button_type === 'share' ? 'bg-primary/20 text-primary hover:bg-primary/30' :
+                            'bg-background/70 text-foreground hover:bg-background/90'}
                         `}
                       >
                         <div className="flex items-center gap-1.5">
