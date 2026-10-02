@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     if (projectId) {
       // Update existing project
       await db.collection('channel_projects').updateOne(
-        { _id: Number(projectId), user_id: Number(userId) },
+        { _id: Number(projectId) as any, user_id: Number(userId) },
         {
           $set: {
             channel_id: channelId,
@@ -113,7 +113,7 @@ export async function DELETE(request: Request) {
     if (!db) throw new Error("Database not connected");
 
     await db.collection('channel_projects').deleteOne({
-      _id: Number(projectId),
+      _id: Number(projectId) as any,
       user_id: Number(userId)
     });
 
