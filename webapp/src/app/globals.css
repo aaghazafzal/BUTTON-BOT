@@ -99,3 +99,19 @@ body {
   box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.04);
 }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}

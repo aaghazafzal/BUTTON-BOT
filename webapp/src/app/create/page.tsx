@@ -400,8 +400,8 @@ export default function CreatePost() {
                       <div 
                         key={btn.id} 
                         className={`flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 px-1 sm:px-2 rounded-xl text-[12px] sm:text-[13px] font-medium transition-colors shadow-sm backdrop-blur-md border border-white/5
-                          ${btn.button_type === 'url' && btn.color === 'primary' ? 'bg-primary/20 text-primary hover:bg-primary/30' :
-                            btn.button_type === 'url' && btn.color === 'success' ? 'bg-emerald-500/20 text-emerald-500 dark:text-emerald-400 hover:bg-emerald-500/30' :
+                          ${btn.button_type === 'url' && btn.color === 'primary' ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/30' :
+                            btn.button_type === 'url' && btn.color === 'success' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30' :
                             btn.button_type === 'url' && btn.color === 'danger' ? 'bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-500/30' :
                             btn.button_type === 'views' || btn.button_type === 'share' ? 'bg-primary/20 text-primary hover:bg-primary/30' :
                             'bg-background/70 text-foreground hover:bg-background/90'}
