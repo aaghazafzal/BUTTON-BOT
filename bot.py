@@ -2930,7 +2930,31 @@ async def on_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         logger.info(f"Auto-added buttons to {channel_id}/{msg_id}")
     except Exception as e:
-        logger.warning(f"Auto-adder failed for {channel_id}/{msg_id}: {e}")
+        err_str = str(e).lower()
+        if "can't be edited" in err_str or "forward" in err_str or "modified" in err_str:
+            try:
+                # Fallback: Copy the message to remove forward restrictions, then delete original
+                logger.info(f"Cannot edit {msg_id}, copying instead...")
+                copied = await ctx.bot.copy_message(
+                    chat_id=post.chat_id, 
+                    from_chat_id=post.chat_id, 
+                    message_id=msg_id,
+                    reply_markup=kb
+                )
+                await ctx.bot.delete_message(chat_id=post.chat_id, message_id=msg_id)
+                
+                # Update DB to point to new message ID for reactions
+                new_msg_id = copied.message_id
+                await db.get_or_create_channel_reactions(channel_id, new_msg_id)
+                
+                # We need to rebuild keyboard with new msg id so callbacks work
+                new_kb = project_post_keyboard(channel_id, new_msg_id, btns, counts=counts, bot_username=uname)
+                await ctx.bot.edit_message_reply_markup(chat_id=post.chat_id, message_id=new_msg_id, reply_markup=new_kb)
+                logger.info(f"Successfully copied and added buttons to {channel_id}/{new_msg_id}")
+            except Exception as copy_e:
+                logger.warning(f"Auto-adder copy fallback failed for {channel_id}/{msg_id}: {copy_e}")
+        else:
+            logger.warning(f"Auto-adder failed for {channel_id}/{msg_id}: {e}")
 
 
 # ═══════════════════════════════════════════════════════

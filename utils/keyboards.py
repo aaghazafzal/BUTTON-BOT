@@ -605,19 +605,24 @@ def project_post_keyboard(channel_id: str, message_id: int,
         btype = btn['button_type']
         color_name = btn.get('color', 'default')
 
-        style = None
-        if color_name == 'red':    style = 'danger'
-        elif color_name == 'green': style = 'success'
-        elif color_name == 'blue':  style = 'primary'
+        # WebApp sends 'primary', 'success', 'danger'
+        emoji_prefix = ""
+        if color_name in ['red', 'danger']:    
+            emoji_prefix = "🔴 "
+        elif color_name in ['green', 'success']: 
+            emoji_prefix = "🟢 "
+        elif color_name in ['blue', 'primary']:  
+            emoji_prefix = "🔵 "
 
         if btype == 'url':
-            ib = _ib(btn['text'].strip(), url=btn['url'], style=style)
+            text = f"{emoji_prefix}{btn['text'].strip()}" if emoji_prefix else btn['text'].strip()
+            ib = _ib(text, url=btn['url'])
         elif btype == 'like':
-            ib = _ib(f"👍  {likes}", cb=f"chreact|like|{cid}|{mid}", style="success")
+            ib = _ib(f"👍  {likes}", cb=f"chreact|like|{cid}|{mid}")
         elif btype == 'dislike':
-            ib = _ib(f"👎  {dislikes}", cb=f"chreact|dislike|{cid}|{mid}", style="danger")
+            ib = _ib(f"👎  {dislikes}", cb=f"chreact|dislike|{cid}|{mid}")
         elif btype == 'views':
-            ib = _ib(f"👁️  {views}", cb=f"chreact|views|{cid}|{mid}", style="primary")
+            ib = _ib(f"👁️  {views}", cb=f"chreact|views|{cid}|{mid}")
         elif btype == 'share':
             clean_cid = str(cid).replace('-100', '')
             channel_link = f"https://t.me/c/{clean_cid}/{mid}"
