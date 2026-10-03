@@ -1,10 +1,26 @@
 "use client";
 
 import { useTelegramUser } from "@/lib/twa";
-import { Settings as SettingsIcon, Shield, User, Crown, Activity, Bell, LogOut, ChevronRight } from "lucide-react";
+import { Shield, User, Crown, Activity, Bell, LogOut, ChevronRight, Loader2 } from "lucide-react";
+import useSWR from "swr";
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export default function Settings() {
   const { user } = useTelegramUser();
+
+  const { data: stats, isLoading } = useSWR(
+    user?.id ? `/api/stats?userId=${user.id}` : null,
+    fetcher,
+    { refreshInterval: 5000 }
+  );
+
+  const isPremium = stats?.isPremiumActive || false;
+  const maxPosts = stats?.maxPosts || 100;
+  const totalPosts = stats?.postCount || 0;
+  
+  // Calculate percentage, max at 100%
+  const postPercentage = Math.min(100, Math.round((totalPosts / maxPosts) * 100)) || 0;
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out pb-10">
@@ -46,30 +62,47 @@ export default function Settings() {
 
           {/* Subscription Card */}
           <div className="glass-card rounded-3xl p-6 md:p-8 space-y-6 relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-colors"></div>
+            {isPremium && (
+              <div className="absolute -right-4 -top-4 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-colors"></div>
+            )}
             
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2.5 bg-amber-500/20 rounded-xl text-amber-600 dark:text-amber-500">
-                <Crown className="w-6 h-6" />
+              <div className={`p-2.5 rounded-xl ${isPremium ? 'bg-amber-500/20 text-amber-600 dark:text-amber-500' : 'bg-secondary text-foreground'}`}>
+                {isPremium ? <Crown className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
               </div>
               <h3 className="text-xl font-bold text-foreground">Current Plan</h3>
             </div>
             
-            <div className="p-5 rounded-2xl bg-secondary/50 border border-border/50">
+            <div className="p-5 rounded-2xl bg-secondary/50 border border-border/50 relative">
+              {isLoading && (
+                <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              )}
+              
               <div className="flex items-center justify-between mb-4">
-                <span className="font-semibold text-foreground">Premium</span>
-                <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-500 text-xs font-bold uppercase tracking-wider">
-                  Active
-                </span>
+                <span className="font-semibold text-foreground">{isPremium ? "Premium" : "Free Tier"}</span>
+                {isPremium ? (
+                  <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-500 text-xs font-bold uppercase tracking-wider">
+                    Active
+                  </span>
+                ) : (
+                  <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider">
+                    Basic
+                  </span>
+                )}
               </div>
               
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Monthly Posts</span>
-                  <span className="font-medium">142 / 200</span>
+                  <span className="text-muted-foreground">Total Posts Sent</span>
+                  <span className="font-medium">{totalPosts} / {maxPosts}</span>
                 </div>
                 <div className="w-full h-2 bg-background rounded-full overflow-hidden">
-                  <div className="h-full bg-amber-500 rounded-full w-[71%]"></div>
+                  <div 
+                    className={`h-full rounded-full transition-all duration-1000 ${isPremium ? 'bg-amber-500' : 'bg-primary'}`} 
+                    style={{ width: `${postPercentage}%` }}
+                  ></div>
                 </div>
               </div>
             </div>
