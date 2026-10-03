@@ -16,6 +16,7 @@ export default function Settings() {
   );
 
   const isPremium = stats?.isPremiumActive || false;
+  const isAdmin = stats?.isAdmin || false;
   const maxPosts = stats?.maxPosts || 100;
   const totalPosts = stats?.postCount || 0;
   
@@ -62,13 +63,16 @@ export default function Settings() {
 
           {/* Subscription Card */}
           <div className="glass-card rounded-3xl p-6 md:p-8 space-y-6 relative overflow-hidden group">
-            {isPremium && (
+            {isPremium && !isAdmin && (
               <div className="absolute -right-4 -top-4 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-colors"></div>
+            )}
+            {isAdmin && (
+              <div className="absolute -right-4 -top-4 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-colors"></div>
             )}
             
             <div className="flex items-center gap-3 mb-2">
-              <div className={`p-2.5 rounded-xl ${isPremium ? 'bg-amber-500/20 text-amber-600 dark:text-amber-500' : 'bg-secondary text-foreground'}`}>
-                {isPremium ? <Crown className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
+              <div className={`p-2.5 rounded-xl ${isAdmin ? 'bg-blue-500/20 text-blue-500' : isPremium ? 'bg-amber-500/20 text-amber-600 dark:text-amber-500' : 'bg-secondary text-foreground'}`}>
+                {isAdmin ? <Shield className="w-6 h-6" /> : isPremium ? <Crown className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
               </div>
               <h3 className="text-xl font-bold text-foreground">Current Plan</h3>
             </div>
@@ -81,8 +85,12 @@ export default function Settings() {
               )}
               
               <div className="flex items-center justify-between mb-4">
-                <span className="font-semibold text-foreground">{isPremium ? "Premium" : "Free Tier"}</span>
-                {isPremium ? (
+                <span className="font-semibold text-foreground">{isAdmin ? "Admin Plan" : isPremium ? "Premium" : "Free Tier"}</span>
+                {isAdmin ? (
+                  <span className="px-3 py-1 rounded-full bg-blue-500/10 text-blue-500 text-xs font-bold uppercase tracking-wider">
+                    Infinity
+                  </span>
+                ) : isPremium ? (
                   <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-500 text-xs font-bold uppercase tracking-wider">
                     Active
                   </span>
@@ -96,12 +104,12 @@ export default function Settings() {
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Total Posts Sent</span>
-                  <span className="font-medium">{totalPosts} / {maxPosts}</span>
+                  <span className="font-medium">{totalPosts} / {maxPosts === 999999 ? "∞" : maxPosts}</span>
                 </div>
                 <div className="w-full h-2 bg-background rounded-full overflow-hidden">
                   <div 
-                    className={`h-full rounded-full transition-all duration-1000 ${isPremium ? 'bg-amber-500' : 'bg-primary'}`} 
-                    style={{ width: `${postPercentage}%` }}
+                    className={`h-full rounded-full transition-all duration-1000 ${isAdmin ? 'bg-blue-500' : isPremium ? 'bg-amber-500' : 'bg-primary'}`} 
+                    style={{ width: `${isAdmin ? 100 : postPercentage}%` }}
                   ></div>
                 </div>
               </div>

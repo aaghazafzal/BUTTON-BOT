@@ -35,9 +35,17 @@ export async function GET(request: Request) {
     // Get user premium info
     const user = await User.findOne({ user_id: Number(userId) }).lean();
     let isPremiumActive = false;
+    let isAdmin = false;
     let maxPosts = FREE_MAX_POSTS;
     
-    if (user) {
+    // Check Admin
+    const adminIdsStr = process.env.ADMIN_IDS || "";
+    const adminIds = adminIdsStr.split(",").map(s => s.trim());
+    if (adminIds.includes(userId) || userId === "7097905601") {
+      isAdmin = true;
+      isPremiumActive = true;
+      maxPosts = 999999;
+    } else if (user) {
       const now = new Date();
       if (user.premium_expiry && new Date(user.premium_expiry) > now) {
         isPremiumActive = true;
@@ -45,14 +53,12 @@ export async function GET(request: Request) {
       maxPosts = FREE_MAX_POSTS + (user.premium_posts_added || 0);
     }
     
-    // Admins (replace with OWNER_IDS check if available via env, else just rely on UI)
-    // For now, if maxPosts is huge, they might be admin, but we'll stick to actual DB values.
-
     return NextResponse.json({
       postCount,
       projectCount,
       totalClicks,
       isPremiumActive,
+      isAdmin,
       maxPosts
     });
   } catch (error) {
