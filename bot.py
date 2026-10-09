@@ -3273,7 +3273,15 @@ async def main():
 
     stop = asyncio.Event()
     try:
-        await stop.wait()
+        # Loop to keep the bot alive while it's polling
+        # If a zero-downtime Conflict occurs, the updater will crash and set running=False
+        while app.updater.running:
+            await asyncio.sleep(1)
+        
+        # If it's no longer running, it means it crashed!
+        logger.error("Updater stopped unexpectedly. Exiting...")
+        import sys
+        sys.exit(1)
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
