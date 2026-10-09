@@ -986,22 +986,31 @@ async def receive_content(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("❌ Unsupported content. Send text, photo, video, document, etc.")
         return WAITING_CONTENT
 
-    # Backup media to bin channel if it's not text
-    if content_type != 'text' and getattr(config, 'BIN_CHANNEL_ID', None):
+    # Backup EVERY post (text or media) to the bin channel to preserve exact formatting & premium emojis
+    if getattr(config, 'BIN_CHANNEL_ID', None):
         try:
+            # msg.copy returns a MessageId object, preserving everything (including premium emojis/formatting)
             copied_msg = await msg.copy(chat_id=config.BIN_CHANNEL_ID)
-            _, new_content, _ = extract_content(copied_msg)
-            if new_content:
-                content = new_content
+            
+            ctx.user_data['draft_post'] = {
+                'type': 'copied',
+                'content': f"{config.BIN_CHANNEL_ID}:{copied_msg.message_id}",
+                'caption': caption
+            }
         except Exception as e:
-            logger.error(f"Failed to backup media to bin channel: {e}")
+            logger.error(f"Failed to backup to bin channel: {e}")
+            ctx.user_data['draft_post'] = {
+                'type': content_type,
+                'content': content,
+                'caption': caption
+            }
+    else:
+        ctx.user_data['draft_post'] = {
+            'type': content_type,
+            'content': content,
+            'caption': caption
+        }
 
-    ctx.user_data['draft_post'] = {
-        'type': content_type,
-        'content': content,
-        'caption': caption
-    }
-    
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("⏭️ Skip", callback_data="skip_title", api_kwargs={"style": "primary"})]
     ])

@@ -104,7 +104,15 @@ async def send_post(bot: Bot, chat_id: int | str, post_id: int,
     caption = post.get('caption')
 
     try:
-        if ct == 'text':
+        if ct == 'copied':
+            bin_chat, bin_msg = content.split(':')
+            msg = await bot.copy_message(
+                chat_id=chat_id,
+                from_chat_id=bin_chat,
+                message_id=int(bin_msg),
+                reply_markup=markup
+            )
+        elif ct == 'text':
             msg = await bot.send_message(
                 chat_id, content, parse_mode=ParseMode.HTML, reply_markup=markup)
         elif ct == 'photo':
@@ -140,7 +148,7 @@ async def send_post(bot: Bot, chat_id: int | str, post_id: int,
 
         if track:
             await db.save_sent_message(
-                post_id, chat_id=msg.chat_id, message_id=msg.message_id)
+                post_id, chat_id=str(chat_id), message_id=msg.message_id)
         return msg
 
     except TelegramError as e:
