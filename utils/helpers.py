@@ -51,20 +51,29 @@ def extract_content(message: Message) -> tuple[str, str, str | None]:
     Extract (content_type, content/file_id, caption) from a message.
     Returns (None, None, None) if unsupported.
     """
-    if message.text_html:
-        return 'text', message.text_html, None
+    def get_html(msg, attr):
+        try:
+            return getattr(msg, attr)
+        except Exception:
+            try:
+                return getattr(msg, attr + '_urled')
+            except Exception:
+                return msg.text if attr == 'text_html' else msg.caption
+
+    if message.text:
+        return 'text', get_html(message, 'text_html'), None
     elif message.photo:
-        return 'photo', message.photo[-1].file_id, message.caption_html
+        return 'photo', message.photo[-1].file_id, get_html(message, 'caption_html')
     elif message.video:
-        return 'video', message.video.file_id, message.caption_html
+        return 'video', message.video.file_id, get_html(message, 'caption_html')
     elif message.document:
-        return 'document', message.document.file_id, message.caption_html
+        return 'document', message.document.file_id, get_html(message, 'caption_html')
     elif message.animation:
-        return 'animation', message.animation.file_id, message.caption_html
+        return 'animation', message.animation.file_id, get_html(message, 'caption_html')
     elif message.audio:
-        return 'audio', message.audio.file_id, message.caption_html
+        return 'audio', message.audio.file_id, get_html(message, 'caption_html')
     elif message.voice:
-        return 'voice', message.voice.file_id, message.caption_html
+        return 'voice', message.voice.file_id, get_html(message, 'caption_html')
     elif message.video_note:
         return 'video_note', message.video_note.file_id, None
     elif message.sticker:
